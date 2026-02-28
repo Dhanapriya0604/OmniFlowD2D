@@ -1,6 +1,7 @@
 """
-OmniFlow-D2D: End-to-End Data Science Application
-Integrates Amazon India Sales data for Supply Chain Intelligence
+OmniFlow-D2D: End-to-End Supply Chain Intelligence
+Dataset: OmniFlow_D2D_India_Unified_1000.csv  (50 real Amazon India SKUs, 1000 orders)
+Sources: Amazon India Sales 2025 + Shiprocket/INCREFF Amazon Sales 2025
 """
 
 import streamlit as st
@@ -9,1184 +10,655 @@ import numpy as np
 import plotly.express as px
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
-import warnings
-warnings.filterwarnings('ignore')
+import warnings, re
+warnings.filterwarnings("ignore")
 
-# ─── Page Config ───────────────────────────────────────────────────────────────
-st.set_page_config(
-    page_title="OmniFlow-D2D",
-    page_icon="🔄",
-    layout="wide",
-    initial_sidebar_state="expanded"
-)
+# ══════════════════════════════════════════════════════
+# PAGE CONFIG & STYLES
+# ══════════════════════════════════════════════════════
+st.set_page_config(page_title="OmniFlow-D2D", page_icon="🔄",
+                   layout="wide", initial_sidebar_state="expanded")
 
-# ─── Custom CSS ────────────────────────────────────────────────────────────────
 st.markdown("""
 <style>
 @import url('https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=Sora:wght@300;400;600;800&display=swap');
+html,body,[class*="css"]{font-family:'Sora',sans-serif;background:#0a0e1a;color:#e2e8f0}
+.main,.block-container{background:#0a0e1a}
+.block-container{padding:1.5rem 2rem;max-width:1400px}
+section[data-testid="stSidebar"]{background:linear-gradient(180deg,#0d1424,#111827);border-right:1px solid #1e293b}
+[data-testid="metric-container"]{background:#111827;border:1px solid #1e293b;border-radius:12px;padding:1rem;position:relative;overflow:hidden}
+[data-testid="metric-container"]::before{content:'';position:absolute;top:0;left:0;right:0;height:2px;background:linear-gradient(90deg,#00d4ff,#7c3aed)}
+[data-testid="metric-container"] label{color:#64748b!important;font-size:.75rem;text-transform:uppercase;letter-spacing:.1em}
+[data-testid="metric-container"] [data-testid="stMetricValue"]{color:#00d4ff!important;font-family:'Space Mono',monospace;font-size:1.5rem}
+.ph{background:linear-gradient(135deg,#0a0e1a,#1a1040,#0a1628);border:1px solid #1e293b;border-radius:16px;padding:1.5rem 2rem;margin-bottom:1.5rem}
+.ph h1{font-size:1.8rem;font-weight:800;margin:0;background:linear-gradient(135deg,#00d4ff,#7c3aed);-webkit-background-clip:text;-webkit-text-fill-color:transparent}
+.ph p{color:#64748b;margin:.4rem 0 0;font-size:.85rem}
+.stButton>button{background:linear-gradient(135deg,#0a192f,#1a2a4a);border:1px solid #00d4ff;color:#00d4ff;border-radius:8px;font-family:'Space Mono',monospace;font-size:.75rem;transition:all .2s}
+.stButton>button:hover{background:#00d4ff;color:#0a0e1a}
+.chat-user{background:linear-gradient(135deg,#1e1b4b,#312e81);border:1px solid #4338ca;border-radius:12px 12px 4px 12px;padding:.75rem 1rem;margin:.4rem 0;max-width:75%;margin-left:auto;font-size:.85rem}
+.chat-bot{background:#111827;border:1px solid #1e293b;border-left:3px solid #00d4ff;border-radius:4px 12px 12px 12px;padding:.75rem 1rem;margin:.4rem 0;max-width:85%;font-family:'Space Mono',monospace;font-size:.78rem;line-height:1.7}
+.logo{font-family:'Space Mono',monospace;font-size:1.2rem;font-weight:700;background:linear-gradient(135deg,#00d4ff,#7c3aed);-webkit-background-clip:text;-webkit-text-fill-color:transparent;text-align:center;padding:1rem 0}
+hr{border-color:#1e293b}
+</style>""", unsafe_allow_html=True)
 
-:root {
-    --bg: #0a0e1a;
-    --surface: #111827;
-    --surface2: #1a2235;
-    --accent: #00d4ff;
-    --accent2: #7c3aed;
-    --accent3: #f59e0b;
-    --text: #e2e8f0;
-    --muted: #64748b;
-    --success: #10b981;
-    --danger: #ef4444;
-}
-
-html, body, [class*="css"] {
-    font-family: 'Sora', sans-serif;
-    background-color: var(--bg);
-    color: var(--text);
-}
-
-.main { background: var(--bg); }
-.block-container { padding: 1.5rem 2rem; max-width: 1400px; }
-
-/* Sidebar */
-section[data-testid="stSidebar"] {
-    background: linear-gradient(180deg, #0d1424 0%, #111827 100%);
-    border-right: 1px solid #1e293b;
-}
-section[data-testid="stSidebar"] .block-container { padding: 1rem; }
-
-/* Metrics */
-[data-testid="metric-container"] {
-    background: var(--surface);
-    border: 1px solid #1e293b;
-    border-radius: 12px;
-    padding: 1rem;
-    position: relative;
-    overflow: hidden;
-}
-[data-testid="metric-container"]::before {
-    content: '';
-    position: absolute;
-    top: 0; left: 0; right: 0;
-    height: 2px;
-    background: linear-gradient(90deg, var(--accent), var(--accent2));
-}
-[data-testid="metric-container"] label { color: var(--muted) !important; font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.1em; }
-[data-testid="metric-container"] [data-testid="stMetricValue"] { color: var(--accent) !important; font-family: 'Space Mono', monospace; font-size: 1.6rem; }
-
-/* Cards */
-.card {
-    background: var(--surface);
-    border: 1px solid #1e293b;
-    border-radius: 16px;
-    padding: 1.5rem;
-    margin-bottom: 1rem;
-}
-
-/* Header */
-.page-header {
-    background: linear-gradient(135deg, #0a0e1a 0%, #1a1040 50%, #0a1628 100%);
-    border: 1px solid #1e293b;
-    border-radius: 16px;
-    padding: 2rem;
-    margin-bottom: 2rem;
-    position: relative;
-    overflow: hidden;
-}
-.page-header::after {
-    content: '';
-    position: absolute;
-    top: -50%; right: -10%;
-    width: 400px; height: 400px;
-    background: radial-gradient(circle, rgba(0,212,255,0.08) 0%, transparent 70%);
-    pointer-events: none;
-}
-.page-header h1 { font-size: 2rem; font-weight: 800; margin: 0; background: linear-gradient(135deg, var(--accent), var(--accent2)); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
-.page-header p { color: var(--muted); margin: 0.5rem 0 0; font-size: 0.9rem; }
-
-/* Tables */
-.dataframe { border: none !important; }
-.dataframe th { background: var(--surface2) !important; color: var(--accent) !important; font-family: 'Space Mono', monospace; font-size: 0.75rem; }
-.dataframe td { background: var(--surface) !important; color: var(--text) !important; font-size: 0.8rem; }
-
-/* Chat */
-.chat-msg-user {
-    background: linear-gradient(135deg, #1e1b4b, #312e81);
-    border: 1px solid #4338ca;
-    border-radius: 12px 12px 4px 12px;
-    padding: 0.75rem 1rem;
-    margin: 0.5rem 0;
-    max-width: 75%;
-    margin-left: auto;
-}
-.chat-msg-bot {
-    background: var(--surface2);
-    border: 1px solid #1e293b;
-    border-left: 3px solid var(--accent);
-    border-radius: 4px 12px 12px 12px;
-    padding: 0.75rem 1rem;
-    margin: 0.5rem 0;
-    max-width: 85%;
-    font-family: 'Space Mono', monospace;
-    font-size: 0.8rem;
-    line-height: 1.6;
-}
-
-/* Plotly plots dark bg */
-.js-plotly-plot { border-radius: 12px; overflow: hidden; }
-
-/* Buttons */
-.stButton > button {
-    background: linear-gradient(135deg, #0a192f, #1a2a4a);
-    border: 1px solid var(--accent);
-    color: var(--accent);
-    border-radius: 8px;
-    font-family: 'Space Mono', monospace;
-    font-size: 0.75rem;
-    letter-spacing: 0.05em;
-    transition: all 0.2s;
-}
-.stButton > button:hover {
-    background: var(--accent);
-    color: var(--bg);
-    border-color: var(--accent);
-}
-
-/* Selectbox / input */
-.stSelectbox > div > div, .stTextInput > div > div {
-    background: var(--surface2);
-    border-color: #1e293b;
-    color: var(--text);
-}
-
-/* Divider */
-hr { border-color: #1e293b; }
-
-/* Tab styling */
-.stTabs [data-baseweb="tab-list"] { background: var(--surface); border-radius: 10px; padding: 4px; }
-.stTabs [data-baseweb="tab"] { color: var(--muted); font-family: 'Sora'; }
-.stTabs [aria-selected="true"] { background: var(--accent2) !important; color: white !important; border-radius: 6px; }
-
-/* Sidebar nav pills */
-.nav-pill {
-    display: block;
-    padding: 0.6rem 1rem;
-    margin: 0.2rem 0;
-    border-radius: 8px;
-    color: var(--muted);
-    font-size: 0.85rem;
-    cursor: pointer;
-    transition: all 0.2s;
-    border: 1px solid transparent;
-    text-decoration: none;
-}
-.nav-pill:hover { background: var(--surface2); border-color: #1e293b; color: var(--text); }
-.nav-pill.active { background: linear-gradient(135deg, rgba(0,212,255,0.1), rgba(124,58,237,0.1)); border-color: var(--accent); color: var(--accent); }
-
-.logo-text {
-    font-family: 'Space Mono', monospace;
-    font-size: 1.3rem;
-    font-weight: 700;
-    background: linear-gradient(135deg, var(--accent), var(--accent2));
-    -webkit-background-clip: text;
-    -webkit-text-fill-color: transparent;
-    text-align: center;
-    padding: 1rem 0;
-}
-
-.tag {
-    display: inline-block;
-    padding: 0.15rem 0.5rem;
-    border-radius: 4px;
-    font-size: 0.65rem;
-    font-family: 'Space Mono', monospace;
-    font-weight: 700;
-    letter-spacing: 0.05em;
-    text-transform: uppercase;
-}
-.tag-blue { background: rgba(0,212,255,0.15); color: var(--accent); border: 1px solid rgba(0,212,255,0.3); }
-.tag-purple { background: rgba(124,58,237,0.15); color: #a78bfa; border: 1px solid rgba(124,58,237,0.3); }
-.tag-amber { background: rgba(245,158,11,0.15); color: var(--accent3); border: 1px solid rgba(245,158,11,0.3); }
-.tag-green { background: rgba(16,185,129,0.15); color: var(--success); border: 1px solid rgba(16,185,129,0.3); }
-.tag-red { background: rgba(239,68,68,0.15); color: var(--danger); border: 1px solid rgba(239,68,68,0.3); }
-</style>
-""", unsafe_allow_html=True)
-
-# ─── Data Generation (Synthetic merged Amazon India + Shiprocket dataset) ─────
-@st.cache_data
-def load_dataset():
-    """
-    Generates a realistic merged dataset combining:
-    - Amazon India Sales 2025 (Kaggle: allenclose/amazon-india-sales-2025-analysis)
-    - Amazon Sales 2025 Shiprocket/INCREFF (Kaggle: zahidmughal2343/amazon-sales-2025)
-    
-    The datasets are merged on common fields (order_id, product_category, date)
-    and cleaned into ONE unified dataset used across ALL modules.
-    """
-    np.random.seed(42)
-    n = 5000
-
-    # Date range: Jan 2024 – Feb 2025
-    dates = pd.date_range("2024-01-01", "2025-02-28", freq="D")
-    order_dates = np.random.choice(dates, n)
-
-    # Products from both datasets
-    products = [
-        "Wireless Earbuds", "Smart Watch", "Phone Case", "Laptop Stand",
-        "USB Hub", "Power Bank", "Bluetooth Speaker", "Keyboard",
-        "Mouse", "Monitor", "Headphones", "Webcam", "LED Strip",
-        "Desk Lamp", "Phone Charger", "Screen Protector", "Cable Organizer",
-        "Cooling Pad", "SSD Drive", "Printer Ink"
-    ]
-    categories = {
-        "Wireless Earbuds": "Electronics", "Smart Watch": "Electronics",
-        "Phone Case": "Accessories", "Laptop Stand": "Accessories",
-        "USB Hub": "Electronics", "Power Bank": "Electronics",
-        "Bluetooth Speaker": "Electronics", "Keyboard": "Peripherals",
-        "Mouse": "Peripherals", "Monitor": "Peripherals",
-        "Headphones": "Electronics", "Webcam": "Peripherals",
-        "LED Strip": "Home & Decor", "Desk Lamp": "Home & Decor",
-        "Phone Charger": "Accessories", "Screen Protector": "Accessories",
-        "Cable Organizer": "Accessories", "Cooling Pad": "Peripherals",
-        "SSD Drive": "Storage", "Printer Ink": "Peripherals"
-    }
-    regions = ["Maharashtra", "Delhi", "Karnataka", "Tamil Nadu", "Telangana",
-               "Gujarat", "West Bengal", "Rajasthan", "Uttar Pradesh", "Pune"]
-    cities = {
-        "Maharashtra": ["Mumbai", "Pune", "Nagpur"],
-        "Delhi": ["New Delhi", "Noida", "Gurugram"],
-        "Karnataka": ["Bengaluru", "Mysuru", "Hubli"],
-        "Tamil Nadu": ["Chennai", "Coimbatore", "Madurai"],
-        "Telangana": ["Hyderabad", "Warangal"],
-        "Gujarat": ["Ahmedabad", "Surat", "Vadodara"],
-        "West Bengal": ["Kolkata", "Howrah"],
-        "Rajasthan": ["Jaipur", "Jodhpur"],
-        "Uttar Pradesh": ["Lucknow", "Kanpur", "Agra"],
-        "Pune": ["Pune", "Pimpri", "Chinchwad"]
-    }
-    statuses = ["Delivered", "Shipped", "Returned", "Cancelled"]
-    couriers = ["BlueDart", "Delhivery", "Ecom Express", "XpressBees", "DTDC"]
-
-    _prod_p = np.array([0.12,0.10,0.09,0.07,0.06,0.08,0.07,0.06,0.06,0.05,0.05,0.03,0.03,0.03,0.04,0.03,0.03,0.02,0.03,0.04])
-    _prod_p = _prod_p / _prod_p.sum()
-    _region_p = np.array([0.18,0.15,0.14,0.10,0.08,0.09,0.07,0.05,0.08,0.06])
-    _region_p = _region_p / _region_p.sum()
-    _status_p = np.array([0.72,0.14,0.08,0.06])
-    _status_p = _status_p / _status_p.sum()
-    prod_arr = np.random.choice(products, n, p=_prod_p)
-    region_arr = np.random.choice(regions, n, p=_region_p)
-    status_arr = np.random.choice(statuses, n, p=_status_p)
-    courier_arr = np.random.choice(couriers, n)
-
-    # Price map
-    prices = {
-        "Wireless Earbuds": 1299, "Smart Watch": 2499, "Phone Case": 299,
-        "Laptop Stand": 899, "USB Hub": 699, "Power Bank": 999,
-        "Bluetooth Speaker": 1599, "Keyboard": 1199, "Mouse": 599,
-        "Monitor": 8999, "Headphones": 1799, "Webcam": 1999,
-        "LED Strip": 499, "Desk Lamp": 799, "Phone Charger": 399,
-        "Screen Protector": 199, "Cable Organizer": 249, "Cooling Pad": 799,
-        "SSD Drive": 3499, "Printer Ink": 599
-    }
-    qty = np.random.randint(1, 6, n)
-    price_arr = np.array([prices[p] * (1 + np.random.uniform(-0.1, 0.1)) for p in prod_arr])
-    revenue = price_arr * qty
-
-    # Shiprocket fields: delivery time, warehouse
-    delivery_days = np.random.randint(2, 8, n)
-    warehouses = np.random.choice(["Mumbai WH", "Delhi WH", "Bengaluru WH", "Hyderabad WH"], n)
-    shipping_cost = np.random.uniform(40, 150, n).round(2)
-
-    city_arr = [np.random.choice(cities[r]) for r in region_arr]
-    cat_arr = [categories[p] for p in prod_arr]
-
-    df = pd.DataFrame({
-        "order_id": [f"AMZ-{2025000+i}" for i in range(n)],
-        "order_date": order_dates,
-        "product": prod_arr,
-        "category": cat_arr,
-        "region": region_arr,
-        "city": city_arr,
-        "quantity": qty,
-        "unit_price": price_arr.round(2),
-        "revenue": revenue.round(2),
-        "order_status": status_arr,
-        "courier": courier_arr,
-        "delivery_days": delivery_days,
-        "warehouse": warehouses,
-        "shipping_cost": shipping_cost,
-        "return_flag": (status_arr == "Returned").astype(int)
-    })
-
-    df["order_date"] = pd.to_datetime(df["order_date"])
-    df = df.sort_values("order_date").reset_index(drop=True)
-
-    # Add month/week columns for time series
-    df["month"] = df["order_date"].dt.to_period("M").astype(str)
-    df["week"] = df["order_date"].dt.to_period("W").astype(str)
-    df["day_of_week"] = df["order_date"].dt.day_name()
-
-    return df
-
-# ─── Shared plot layout ────────────────────────────────────────────────────────
-PLOT_LAYOUT = dict(
-    paper_bgcolor="rgba(17,24,39,0)",
-    plot_bgcolor="rgba(17,24,39,0)",
-    font=dict(family="Sora, sans-serif", color="#94a3b8", size=11),
-    title_font=dict(family="Sora, sans-serif", color="#e2e8f0", size=14),
-    xaxis=dict(gridcolor="#1e293b", showgrid=True, zeroline=False),
-    yaxis=dict(gridcolor="#1e293b", showgrid=True, zeroline=False),
-    legend=dict(bgcolor="rgba(0,0,0,0)", bordercolor="rgba(0,0,0,0)"),
-    margin=dict(l=20, r=20, t=40, b=20),
+# ── Plot defaults ──
+PLT = dict(
+    paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
+    font=dict(family="Sora,sans-serif", color="#94a3b8", size=11),
+    xaxis=dict(gridcolor="#1e293b", zeroline=False),
+    yaxis=dict(gridcolor="#1e293b", zeroline=False),
+    legend=dict(bgcolor="rgba(0,0,0,0)"),
+    margin=dict(l=20,r=20,t=40,b=20),
     colorway=["#00d4ff","#7c3aed","#f59e0b","#10b981","#ef4444","#3b82f6","#ec4899"]
 )
-
-def apply_layout(fig, title=""):
-    layout = PLOT_LAYOUT.copy()
+def fmt(fig, title=""):
+    d = PLT.copy()
     if title:
-        layout["title"] = dict(text=title, font=dict(family="Sora, sans-serif", color="#e2e8f0", size=14))
-    fig.update_layout(**layout)
+        d["title"] = dict(text=title, font=dict(family="Sora,sans-serif", color="#e2e8f0", size=14))
+    fig.update_layout(**d)
     return fig
 
-# ═══════════════════════════════════════════════════════════════════════════════
-# MODULE 1: OVERVIEW DASHBOARD
-# ═══════════════════════════════════════════════════════════════════════════════
-def page_overview(df):
-    st.markdown("""
-    <div class='page-header'>
-        <h1>📊 Overview Dashboard</h1>
-        <p>Unified view of Amazon India sales performance — Jan 2024 to Feb 2025</p>
-    </div>
-    """, unsafe_allow_html=True)
-
-    delivered = df[df["order_status"] == "Delivered"]
-    total_revenue = delivered["revenue"].sum()
-    total_orders = len(df)
-    avg_order_val = delivered["revenue"].mean()
-    return_rate = df["return_flag"].mean() * 100
-    top_product = df.groupby("product")["revenue"].sum().idxmax()
-
-    c1, c2, c3, c4, c5 = st.columns(5)
-    c1.metric("💰 Total Revenue", f"₹{total_revenue/1e6:.2f}M")
-    c2.metric("📦 Total Orders", f"{total_orders:,}")
-    c3.metric("🛒 Avg Order Value", f"₹{avg_order_val:.0f}")
-    c4.metric("↩️ Return Rate", f"{return_rate:.1f}%")
-    c5.metric("🏆 Top Product", top_product.split()[-1])
-
-    st.markdown("---")
-    col1, col2 = st.columns([2, 1])
-
-    with col1:
-        monthly = df.groupby("month").agg(revenue=("revenue","sum"), orders=("order_id","count")).reset_index()
-        fig = make_subplots(specs=[[{"secondary_y": True}]])
-        fig.add_trace(go.Bar(x=monthly["month"], y=monthly["revenue"], name="Revenue (₹)", marker_color="#00d4ff", opacity=0.7), secondary_y=False)
-        fig.add_trace(go.Scatter(x=monthly["month"], y=monthly["orders"], name="Orders", line=dict(color="#f59e0b", width=2), mode="lines+markers"), secondary_y=True)
-        apply_layout(fig, "Monthly Revenue & Order Trend")
-        fig.update_yaxes(gridcolor="#1e293b", secondary_y=False)
-        fig.update_yaxes(gridcolor="rgba(0,0,0,0)", secondary_y=True)
-        st.plotly_chart(fig, use_container_width=True)
-
-    with col2:
-        cat_rev = df.groupby("category")["revenue"].sum().reset_index()
-        fig2 = go.Figure(go.Pie(
-            labels=cat_rev["category"], values=cat_rev["revenue"],
-            hole=0.55,
-            marker=dict(colors=["#00d4ff","#7c3aed","#f59e0b","#10b981","#ef4444"]),
-            textinfo="label+percent", textfont=dict(size=10)
-        ))
-        apply_layout(fig2, "Revenue by Category")
-        st.plotly_chart(fig2, use_container_width=True)
-
-    col3, col4 = st.columns(2)
-    with col3:
-        region_rev = df.groupby("region")["revenue"].sum().sort_values(ascending=True).reset_index()
-        fig3 = go.Figure(go.Bar(
-            x=region_rev["revenue"], y=region_rev["region"],
-            orientation="h", marker=dict(
-                color=region_rev["revenue"],
-                colorscale=[[0,"#1a2235"],[0.5,"#0e4d6e"],[1,"#00d4ff"]]
-            )
-        ))
-        apply_layout(fig3, "Region-wise Revenue")
-        st.plotly_chart(fig3, use_container_width=True)
-
-    with col4:
-        top10 = df.groupby("product")["quantity"].sum().sort_values(ascending=False).head(10).reset_index()
-        fig4 = px.bar(top10, x="product", y="quantity", color="quantity",
-                      color_continuous_scale=["#1a1040","#7c3aed","#a78bfa"])
-        fig4.update_layout(showlegend=False, coloraxis_showscale=False)
-        apply_layout(fig4, "Top 10 Products by Units Sold")
-        fig4.update_xaxes(tickangle=-30)
-        st.plotly_chart(fig4, use_container_width=True)
-
-    # Day of week heatmap-ish
-    dow_prod = df.groupby(["day_of_week","category"])["revenue"].sum().reset_index()
-    day_order = ["Monday","Tuesday","Wednesday","Thursday","Friday","Saturday","Sunday"]
-    dow_prod["day_of_week"] = pd.Categorical(dow_prod["day_of_week"], categories=day_order, ordered=True)
-    dow_prod = dow_prod.sort_values("day_of_week")
-    fig5 = px.bar(dow_prod, x="day_of_week", y="revenue", color="category",
-                  barmode="stack",
-                  color_discrete_sequence=["#00d4ff","#7c3aed","#f59e0b","#10b981","#ef4444"])
-    apply_layout(fig5, "Revenue by Day of Week & Category")
-    st.plotly_chart(fig5, use_container_width=True)
-
-
-# ═══════════════════════════════════════════════════════════════════════════════
-# MODULE 2: DEMAND FORECASTING
-# ═══════════════════════════════════════════════════════════════════════════════
-def run_forecast(series, periods=3):
-    """Simple ARIMA-style forecast using statsmodels SARIMAX or fallback linear regression."""
+# ══════════════════════════════════════════════════════
+# DATA LOADER
+# ══════════════════════════════════════════════════════
+@st.cache_data
+def load_data():
     try:
-        from statsmodels.tsa.statespace.sarimax import SARIMAX
-        model = SARIMAX(series, order=(1,1,1), seasonal_order=(1,0,1,12),
-                        enforce_stationarity=False, enforce_invertibility=False)
-        fit = model.fit(disp=False)
-        forecast = fit.forecast(steps=periods)
-        return forecast
-    except Exception:
-        # Fallback: linear trend
-        x = np.arange(len(series))
-        z = np.polyfit(x, series.values, 1)
-        p = np.poly1d(z)
-        fut = np.arange(len(series), len(series)+periods)
-        return pd.Series(p(fut).clip(0), index=range(periods))
+        df = pd.read_csv("OmniFlow_D2D_India_Unified_1000.csv", parse_dates=["Order_Date"])
+        df.columns = [c.strip() for c in df.columns]
+    except FileNotFoundError:
+        df = _build_synthetic()
+    df["Order_Date"] = pd.to_datetime(df["Order_Date"])
+    df["Month"]       = df["Order_Date"].dt.to_period("M").astype(str)
+    df["Week"]        = df["Order_Date"].dt.to_period("W").astype(str)
+    df["Day_of_Week"] = df["Order_Date"].dt.day_name()
+    return df.sort_values("Order_Date").reset_index(drop=True)
 
-def compute_metrics(actual, predicted):
-    mse = np.mean((actual - predicted)**2)
-    rmse = np.sqrt(mse)
-    nrmse = rmse / (actual.max() - actual.min() + 1e-6)
-    return rmse, nrmse
+def _build_synthetic():
+    np.random.seed(42)
+    n = 1000
+    skus = [
+        ("AMZ-IN-E001","Samsung Galaxy M34 5G","Electronics & Mobiles","Smartphone","Samsung",13500),
+        ("AMZ-IN-E003","boAt Airdopes 141 TWS","Electronics & Mobiles","Earbuds","boAt",1230),
+        ("AMZ-IN-E006","Noise ColorFit Pro 5 Watch","Electronics & Mobiles","Smartwatch","Noise",3080),
+        ("AMZ-IN-H001","Prestige Iris 750W Mixer Grinder","Home & Kitchen","Mixer Grinder","Prestige",1950),
+        ("AMZ-IN-H004","Milton Thermosteel Flip Bottle","Home & Kitchen","Water Bottle","Milton",399),
+        ("AMZ-IN-F001","Jockey 1501 Brief Pack","Fashion & Apparel","Innerwear","Jockey",499),
+        ("AMZ-IN-P001","Himalaya Neem Face Wash","Health & Personal Care","Skincare","Himalaya",149),
+        ("AMZ-IN-P007","Dove Moisturising Soap x4","Health & Personal Care","Personal Care","Dove",225),
+    ]
+    dates = pd.date_range("2024-01-01","2025-03-31")
+    w = np.array([1.4 if d.month in [10,11] else 0.8 if d.month in [6,7] else 1.0 for d in dates])
+    w = w / w.sum()
+    od = np.random.choice(dates, n, p=w)
+    idx = np.random.choice(len(skus), n)
+    chosen = [skus[i] for i in idx]
+    qty = np.random.randint(1,5,n)
+    prices = np.array([s[5]*(1+np.random.uniform(-0.03,0.03)) for s in chosen])
+    regions = ["Maharashtra","Delhi","Karnataka","Tamil Nadu","Telangana","Gujarat","West Bengal","Rajasthan","Uttar Pradesh","Pune"]
+    rw = np.array([0.18,0.15,0.14,0.10,0.08,0.09,0.07,0.05,0.08,0.06]); rw=rw/rw.sum()
+    r = np.random.choice(regions, n, p=rw)
+    sw = np.array([0.72,0.14,0.08,0.06]); sw=sw/sw.sum()
+    s = np.random.choice(["Delivered","Shipped","Returned","Cancelled"], n, p=sw)
+    return pd.DataFrame({
+        "Order_ID":[f"ORD-2024-{100000+i}" for i in range(n)],
+        "Order_Date":pd.to_datetime(od),
+        "SKU_ID":[c[0] for c in chosen], "Product_Name":[c[1] for c in chosen],
+        "Category":[c[2] for c in chosen], "Sub_Category":[c[3] for c in chosen],
+        "Brand":[c[4] for c in chosen], "Size_Variant":"One Size", "Color":"Mixed",
+        "Amazon_MRP":(prices*1.2).round(2), "Sell_Price":prices.round(2),
+        "Discount_Pct":np.random.randint(5,30,n), "Quantity":qty,
+        "Revenue_INR":(prices*qty).round(2), "Order_Status":s,
+        "Sales_Channel":np.random.choice(["Amazon.in","Shiprocket"],n),
+        "Fulfilment":"Amazon", "B2B_Flag":0, "Region":r, "City":"Various",
+        "Courier_Partner":np.random.choice(["BlueDart","Delhivery","Ecom Express"],n),
+        "Warehouse":np.random.choice(["Mumbai WH","Delhi WH","Bengaluru WH"],n),
+        "Delivery_Days":np.random.randint(2,8,n),
+        "Shipping_Cost_INR":np.random.uniform(40,150,n).round(2),
+        "Return_Flag":(s=="Returned").astype(int), "Currency":"INR",
+    })
+
+# ══════════════════════════════════════════════════════
+# FORECAST ENGINE
+# ══════════════════════════════════════════════════════
+def _sarimax(series, steps=3):
+    from statsmodels.tsa.statespace.sarimax import SARIMAX
+    m = SARIMAX(series, order=(1,1,1), seasonal_order=(1,0,1,12),
+                enforce_stationarity=False, enforce_invertibility=False)
+    r = m.fit(disp=False, maxiter=200)
+    pred = r.get_forecast(steps=steps)
+    fc = pred.predicted_mean.clip(0)
+    ci = pred.conf_int(alpha=0.2)
+    return fc.values, ci.iloc[:,0].clip(0).values, ci.iloc[:,1].clip(0).values
+
+def _linear(series, steps=3):
+    x = np.arange(len(series))
+    z = np.polyfit(x, series.values, 1)
+    p = np.poly1d(z)
+    fut = np.arange(len(series), len(series)+steps)
+    fc = p(fut).clip(0)
+    std = np.std(series.values - p(x))
+    return fc, (fc-std).clip(0), (fc+std).clip(0)
 
 @st.cache_data
-def get_forecast_results(df):
-    """Compute monthly demand forecasts for all products. Cached."""
+def run_all_forecasts(df, steps=3):
+    active = df[df["Order_Status"].isin(["Delivered","Shipped"])]
+    monthly = active.groupby(["Product_Name","Month"])["Quantity"].sum().reset_index()
+    all_months = [str(m) for m in pd.period_range("2024-01","2025-03",freq="M")]
+    last_period = pd.Period("2025-03","M")
+    future_months = [str(last_period + i + 1) for i in range(steps)]
     results = {}
-    monthly_prod = df.groupby(["month","product"])["quantity"].sum().reset_index()
-    products = df["product"].unique()
-    for prod in products:
-        s = monthly_prod[monthly_prod["product"]==prod].set_index("month")["quantity"]
-        s.index = pd.period_range(start=s.index[0], periods=len(s), freq="M")
-        if len(s) < 4:
+    for prod in df["Product_Name"].unique():
+        sub = monthly[monthly["Product_Name"]==prod].set_index("Month")["Quantity"]
+        sub = sub.reindex(all_months, fill_value=0)
+        if sub.sum() == 0:
             continue
-        train = s[:-3]
-        test = s[-3:]
-        forecast = run_forecast(train, periods=3)
-        rmse, nrmse = compute_metrics(test.values, forecast.values[:len(test)])
-        # Future 3 months
-        full_forecast = run_forecast(s, periods=3)
+        try:
+            fc, lo, hi = _sarimax(sub, steps)
+            method = "SARIMAX"
+        except Exception:
+            fc, lo, hi = _linear(sub, steps)
+            method = "Linear Trend"
+        rmse, nrmse = 0.0, 0.0
+        if len(sub) >= 6:
+            try:
+                fc_t,_,_ = _sarimax(sub.iloc[:-3], 3)
+            except Exception:
+                fc_t,_,_ = _linear(sub.iloc[:-3], 3)
+            test = sub.iloc[-3:].values
+            rmse = float(np.sqrt(np.mean((test - fc_t[:len(test)])**2)))
+            nrmse = rmse / (sub.max() - sub.min() + 1e-6)
+        avg = float(sub[sub>0].mean()) if sub.sum()>0 else 0
         results[prod] = {
-            "history": s,
-            "forecast": full_forecast,
-            "rmse": rmse,
-            "nrmse": nrmse,
-            "monthly_avg": s.mean()
+            "history": sub, "history_x": all_months,
+            "forecast": fc, "lo": lo, "hi": hi,
+            "future_months": future_months,
+            "rmse": round(rmse,2), "nrmse": round(nrmse,4),
+            "method": method, "avg_monthly": avg,
+            "trend": "↑ Rising" if (fc[0] > sub.iloc[-3:].mean()) else "↓ Falling"
         }
     return results
 
-def page_forecasting(df):
-    st.markdown("""
-    <div class='page-header'>
-        <h1>📈 Demand Forecasting</h1>
-        <p>Time-series ARIMA/SARIMAX forecasting of product demand with evaluation metrics</p>
-    </div>
-    """, unsafe_allow_html=True)
-
-    with st.spinner("Running forecasting models..."):
-        forecast_results = get_forecast_results(df)
-
-    products = list(forecast_results.keys())
-    col1, col2 = st.columns([1,3])
-    with col1:
-        selected = st.selectbox("Select Product", products)
-        st.markdown("---")
-        res = forecast_results[selected]
-        st.metric("RMSE", f"{res['rmse']:.2f}")
-        st.metric("NRMSE", f"{res['nrmse']:.3f}")
-        st.metric("Avg Monthly Demand", f"{res['monthly_avg']:.0f} units")
-        forecast_vals = res["forecast"].values
-        forecast_label = ["Next Month", "Month +2", "Month +3"]
-        for lbl, val in zip(forecast_label, forecast_vals):
-            st.metric(lbl, f"{max(0,int(val))} units")
-
-    with col2:
-        hist = res["history"]
-        hist_x = [str(p) for p in hist.index]
-        fore_x = [f"Forecast {i+1}" for i in range(3)]
-        fore_y = [max(0, v) for v in res["forecast"].values]
-
-        fig = go.Figure()
-        fig.add_trace(go.Scatter(x=hist_x, y=hist.values, name="Historical", line=dict(color="#00d4ff", width=2), mode="lines+markers"))
-        # Add confidence band around forecast
-        fig.add_trace(go.Scatter(
-            x=fore_x + fore_x[::-1],
-            y=[v*1.15 for v in fore_y] + [v*0.85 for v in fore_y[::-1]],
-            fill="toself", fillcolor="rgba(124,58,237,0.15)",
-            line=dict(color="rgba(0,0,0,0)"), name="Confidence Band", showlegend=True
-        ))
-        fig.add_trace(go.Scatter(x=fore_x, y=fore_y, name="Forecast", line=dict(color="#7c3aed", width=2, dash="dash"), mode="lines+markers",
-                                  marker=dict(size=10, symbol="diamond", color="#7c3aed")))
-        apply_layout(fig, f"Demand Forecast — {selected}")
-        st.plotly_chart(fig, use_container_width=True)
-
-    st.markdown("### 📋 All Products Forecast Summary")
-    summary = []
-    for prod, r in forecast_results.items():
-        fv = [max(0, v) for v in r["forecast"].values]
-        summary.append({
+# ══════════════════════════════════════════════════════
+# INVENTORY
+# ══════════════════════════════════════════════════════
+def compute_inventory(df, fcs):
+    Z, lead = 1.645, 7
+    rows = []
+    for prod, r in fcs.items():
+        hist = r["history"]
+        avg = r["avg_monthly"]
+        std = hist.std()
+        price = df[df["Product_Name"]==prod]["Sell_Price"].mean()
+        H = price * 0.20 / 12
+        S = 500
+        D = avg * 12
+        ss  = Z * std * np.sqrt(lead/30)
+        rop = (avg/30) * lead + ss
+        eoq = np.sqrt(2*D*S/(H+1e-6))
+        fc_n = float(r["forecast"][0]) if len(r["forecast"])>0 else avg
+        rows.append({
             "Product": prod,
-            "Avg Monthly Demand": int(r["monthly_avg"]),
-            "RMSE": round(r["rmse"],2),
-            "NRMSE": round(r["nrmse"],3),
-            "Forecast M+1": int(fv[0]) if len(fv)>0 else 0,
-            "Forecast M+2": int(fv[1]) if len(fv)>1 else 0,
-            "Forecast M+3": int(fv[2]) if len(fv)>2 else 0,
+            "Avg Monthly Demand": round(avg,1),
+            "Std Dev": round(std,2),
+            "Safety Stock": max(1,round(ss)),
+            "Reorder Point": max(1,round(rop)),
+            "EOQ": max(1,round(eoq)),
+            "Stock Needed (M+1)": max(1,round(fc_n+ss)),
+            "Unit Price (₹)": round(price,2),
+            "Lead Time (days)": lead,
         })
-    sdf = pd.DataFrame(summary).sort_values("Forecast M+1", ascending=False)
-    st.dataframe(sdf, use_container_width=True, hide_index=True)
+    return pd.DataFrame(rows).sort_values("Avg Monthly Demand", ascending=False)
 
-    # Accuracy heatmap
-    rmse_df = pd.DataFrame([(p, r["rmse"], r["nrmse"]) for p,r in forecast_results.items()],
-                            columns=["Product","RMSE","NRMSE"]).sort_values("RMSE")
-    fig2 = px.bar(rmse_df.tail(10), x="Product", y="RMSE", color="NRMSE",
-                  color_continuous_scale=["#10b981","#f59e0b","#ef4444"])
-    apply_layout(fig2, "Top 10 Products — Forecast RMSE")
-    st.plotly_chart(fig2, use_container_width=True)
-
-
-# ═══════════════════════════════════════════════════════════════════════════════
-# MODULE 3: INVENTORY OPTIMIZATION
-# ═══════════════════════════════════════════════════════════════════════════════
-def compute_inventory(df, forecast_results):
-    """
-    Compute inventory metrics using demand forecasts:
-    - Safety Stock = Z * σ_demand * sqrt(lead_time)
-    - Reorder Point = Avg_Daily_Demand * Lead_Time + Safety_Stock
-    - EOQ = sqrt(2 * D * S / H)
-    """
-    Z = 1.645  # 95% service level
-    records = []
-    for prod, res in forecast_results.items():
-        hist = res["history"]
-        avg_demand = hist.mean()
-        std_demand = hist.std()
-        lead_time = 7  # days (from delivery_days stats)
-        unit_price = df[df["product"]==prod]["unit_price"].mean()
-        order_cost = 500   # ₹ per order
-        holding_cost_rate = 0.20  # 20% annually
-        H = unit_price * holding_cost_rate / 12  # monthly holding cost
-
-        safety_stock = Z * std_demand * np.sqrt(lead_time / 30)
-        reorder_point = (avg_demand / 30) * lead_time + safety_stock
-        annual_demand = avg_demand * 12
-        eoq = np.sqrt((2 * annual_demand * order_cost) / (H + 1e-6))
-
-        records.append({
-            "Product": prod,
-            "Avg Monthly Demand": round(avg_demand, 1),
-            "Std Dev": round(std_demand, 2),
-            "Safety Stock": max(1, round(safety_stock)),
-            "Reorder Point (units)": max(1, round(reorder_point)),
-            "EOQ (units)": max(1, round(eoq)),
-            "Unit Price (₹)": round(unit_price, 2),
-            "Lead Time (days)": lead_time
-        })
-    return pd.DataFrame(records).sort_values("Avg Monthly Demand", ascending=False)
-
-def page_inventory(df):
-    st.markdown("""
-    <div class='page-header'>
-        <h1>🏭 Inventory Optimization</h1>
-        <p>Safety Stock, Reorder Points & EOQ derived from demand forecasts</p>
-    </div>
-    """, unsafe_allow_html=True)
-
-    with st.spinner("Optimizing inventory..."):
-        forecast_results = get_forecast_results(df)
-        inv_df = compute_inventory(df, forecast_results)
-
-    col1, col2, col3 = st.columns(3)
-    col1.metric("Total Safety Stock", f"{inv_df['Safety Stock'].sum():,} units")
-    col2.metric("Avg Reorder Point", f"{inv_df['Reorder Point (units)'].mean():.0f} units")
-    col3.metric("Avg EOQ", f"{inv_df['EOQ (units)'].mean():.0f} units")
-
-    st.markdown("---")
-    st.markdown("### 📋 Inventory Policy Table")
-    st.dataframe(inv_df, use_container_width=True, hide_index=True)
-
-    col1, col2 = st.columns(2)
-    with col1:
-        fig = px.bar(inv_df.head(10), x="Product", y=["Safety Stock", "Reorder Point (units)"],
-                     barmode="group",
-                     color_discrete_map={"Safety Stock":"#00d4ff","Reorder Point (units)":"#7c3aed"})
-        apply_layout(fig, "Safety Stock vs Reorder Point (Top 10)")
-        fig.update_xaxes(tickangle=-30)
-        st.plotly_chart(fig, use_container_width=True)
-
-    with col2:
-        fig2 = px.scatter(inv_df, x="Avg Monthly Demand", y="EOQ (units)",
-                          size="Safety Stock", color="Unit Price (₹)",
-                          hover_name="Product",
-                          color_continuous_scale=["#1a1040","#7c3aed","#00d4ff"])
-        apply_layout(fig2, "EOQ vs Demand (bubble = Safety Stock)")
-        st.plotly_chart(fig2, use_container_width=True)
-
-    # Inventory health
-    inv_df["Risk Level"] = pd.cut(inv_df["Std Dev"] / (inv_df["Avg Monthly Demand"]+1),
-                                   bins=3, labels=["Low","Medium","High"])
-    risk_count = inv_df["Risk Level"].value_counts().reset_index()
-    risk_count.columns = ["Risk Level","Count"]
-    fig3 = px.pie(risk_count, names="Risk Level", values="Count",
-                  color="Risk Level",
-                  color_discrete_map={"Low":"#10b981","Medium":"#f59e0b","High":"#ef4444"},
-                  hole=0.5)
-    apply_layout(fig3, "Inventory Risk Distribution")
-    col3_, col4_ = st.columns([1, 2])
-    with col3_:
-        st.plotly_chart(fig3, use_container_width=True)
-    with col4_:
-        st.markdown("#### ⚠️ High-Risk Products (High Demand Variance)")
-        high_risk = inv_df[inv_df["Risk Level"] == "High"][["Product","Avg Monthly Demand","Std Dev","Safety Stock","Reorder Point (units)"]].head(8)
-        st.dataframe(high_risk, use_container_width=True, hide_index=True)
-
-
-# ═══════════════════════════════════════════════════════════════════════════════
-# MODULE 4: PRODUCTION PLANNING
-# ═══════════════════════════════════════════════════════════════════════════════
-def page_production(df):
-    st.markdown("""
-    <div class='page-header'>
-        <h1>⚙️ Production Planning</h1>
-        <p>Capacity planning and production quantity estimation from forecasted demand</p>
-    </div>
-    """, unsafe_allow_html=True)
-
-    with st.spinner("Building production plan..."):
-        forecast_results = get_forecast_results(df)
-        inv_df = compute_inventory(df, forecast_results)
-
-    # Production parameters (user configurable)
-    st.markdown("### ⚙️ Planning Parameters")
-    c1, c2, c3 = st.columns(3)
-    capacity = c1.slider("Monthly Production Capacity (units/product)", 100, 2000, 800)
-    buffer_pct = c2.slider("Production Buffer %", 5, 30, 15)
-    periods = c3.selectbox("Planning Horizon", [1, 2, 3], index=2)
-
+# ══════════════════════════════════════════════════════
+# PAGE 1 — OVERVIEW
+# ══════════════════════════════════════════════════════
+def page_overview(df):
+    st.markdown("<div class='ph'><h1>📊 Overview Dashboard</h1><p>Unified Amazon India sales — Jan 2024 → Mar 2025 · 50 SKUs · 4 categories</p></div>", unsafe_allow_html=True)
+    dlv = df[df["Order_Status"]=="Delivered"]
+    c1,c2,c3,c4,c5 = st.columns(5)
+    c1.metric("💰 Total Revenue",   f"₹{dlv['Revenue_INR'].sum()/1e6:.2f}M")
+    c2.metric("📦 Total Orders",    f"{len(df):,}")
+    c3.metric("🛒 Avg Order Value", f"₹{dlv['Revenue_INR'].mean():.0f}")
+    c4.metric("↩️ Return Rate",     f"{df['Return_Flag'].mean()*100:.1f}%")
+    c5.metric("🏷️ Unique SKUs",     str(df["SKU_ID"].nunique()))
     st.markdown("---")
 
-    records = []
-    for prod, res in forecast_results.items():
-        fv = [max(0, v) for v in res["forecast"].values]
-        for i in range(min(periods, len(fv))):
-            demand = fv[i]
-            safety = inv_df[inv_df["Product"]==prod]["Safety Stock"].values
-            ss = safety[0] if len(safety) > 0 else 0
-            required = demand + ss * buffer_pct / 100
-            production = min(capacity, required * (1 + buffer_pct/100))
-            gap = required - production
-            records.append({
-                "Product": prod,
-                "Month": f"M+{i+1}",
-                "Forecasted Demand": round(demand),
-                "Required Production": round(required),
-                "Planned Production": round(production),
-                "Capacity %": round(production/capacity*100, 1),
-                "Gap (units)": round(max(0, gap)),
-                "Status": "⚠️ Shortage" if gap > 0 else "✅ OK"
-            })
-
-    plan_df = pd.DataFrame(records)
-
-    # KPIs
-    kc1, kc2, kc3, kc4 = st.columns(4)
-    kc1.metric("Total Planned Production", f"{plan_df['Planned Production'].sum():,}")
-    kc2.metric("Total Demand to Meet", f"{plan_df['Forecasted Demand'].sum():,}")
-    kc3.metric("Avg Capacity Utilization", f"{plan_df['Capacity %'].mean():.1f}%")
-    kc4.metric("Products with Shortage", str(len(plan_df[plan_df["Gap (units)"]>0]["Product"].unique())))
-
-    st.markdown("### 📋 Production Plan")
-    st.dataframe(plan_df, use_container_width=True, hide_index=True)
-
-    col1, col2 = st.columns(2)
+    col1,col2 = st.columns([2,1])
     with col1:
-        # Demand vs Production top 10 products M+1
-        m1 = plan_df[plan_df["Month"]=="M+1"].sort_values("Forecasted Demand", ascending=False).head(10)
-        fig = go.Figure()
-        fig.add_trace(go.Bar(x=m1["Product"], y=m1["Forecasted Demand"], name="Demand", marker_color="#00d4ff", opacity=0.8))
-        fig.add_trace(go.Bar(x=m1["Product"], y=m1["Planned Production"], name="Production", marker_color="#7c3aed", opacity=0.8))
-        fig.update_layout(barmode="group")
-        apply_layout(fig, "Demand vs Planned Production (M+1, Top 10)")
-        fig.update_xaxes(tickangle=-30)
-        st.plotly_chart(fig, use_container_width=True)
-
+        m = df.groupby("Month").agg(revenue=("Revenue_INR","sum"), orders=("Order_ID","count")).reset_index()
+        fig = make_subplots(specs=[[{"secondary_y":True}]])
+        fig.add_trace(go.Bar(x=m["Month"],y=m["revenue"],name="Revenue ₹",marker_color="#00d4ff",opacity=0.75),secondary_y=False)
+        fig.add_trace(go.Scatter(x=m["Month"],y=m["orders"],name="Orders",line=dict(color="#f59e0b",width=2),mode="lines+markers"),secondary_y=True)
+        fmt(fig,"Monthly Revenue & Order Volume"); fig.update_xaxes(tickangle=-45,gridcolor="#1e293b")
+        fig.update_yaxes(gridcolor="#1e293b",secondary_y=False); fig.update_yaxes(gridcolor="rgba(0,0,0,0)",secondary_y=True)
+        st.plotly_chart(fig,use_container_width=True)
     with col2:
-        cap_df = plan_df[plan_df["Month"]=="M+1"].sort_values("Capacity %", ascending=False).head(10)
-        fig2 = px.bar(cap_df, x="Product", y="Capacity %",
-                      color="Capacity %", color_continuous_scale=["#10b981","#f59e0b","#ef4444"])
-        fig2.add_hline(y=100, line_dash="dash", line_color="#ef4444", annotation_text="Full Capacity")
-        apply_layout(fig2, "Capacity Utilization by Product (M+1)")
-        fig2.update_xaxes(tickangle=-30)
-        st.plotly_chart(fig2, use_container_width=True)
+        cat = df.groupby("Category")["Revenue_INR"].sum().reset_index()
+        fig2 = go.Figure(go.Pie(labels=cat["Category"],values=cat["Revenue_INR"],hole=0.55,
+                                 marker=dict(colors=["#00d4ff","#7c3aed","#f59e0b","#10b981"]),
+                                 textinfo="label+percent",textfont_size=9))
+        fmt(fig2,"Revenue by Category"); st.plotly_chart(fig2,use_container_width=True)
 
-    # Shortage alert
-    shortages = plan_df[plan_df["Gap (units)"] > 0].sort_values("Gap (units)", ascending=False)
-    if not shortages.empty:
-        st.warning(f"⚠️ {len(shortages)} production plan entries show supply gaps. Consider increasing capacity or adjusting safety stock.")
-        st.dataframe(shortages[["Product","Month","Forecasted Demand","Planned Production","Gap (units)"]].head(10),
-                     use_container_width=True, hide_index=True)
-
-
-# ═══════════════════════════════════════════════════════════════════════════════
-# MODULE 5: LOGISTICS OPTIMIZATION
-# ═══════════════════════════════════════════════════════════════════════════════
-def page_logistics(df):
-    st.markdown("""
-    <div class='page-header'>
-        <h1>🚚 Logistics Optimization</h1>
-        <p>Region-wise demand distribution, delivery time estimation & shipping cost optimization</p>
-    </div>
-    """, unsafe_allow_html=True)
-
-    delivered = df[df["order_status"] == "Delivered"]
-
-    lc1, lc2, lc3, lc4 = st.columns(4)
-    lc1.metric("Avg Delivery Days", f"{delivered['delivery_days'].mean():.1f}")
-    lc2.metric("Total Shipping Cost", f"₹{df['shipping_cost'].sum()/1e6:.2f}M")
-    lc3.metric("Most Used Courier", df["courier"].mode()[0])
-    lc4.metric("Return Rate", f"{df['return_flag'].mean()*100:.1f}%")
-
-    st.markdown("---")
-    col1, col2 = st.columns(2)
-
-    with col1:
-        region_stats = df.groupby("region").agg(
-            orders=("order_id","count"),
-            revenue=("revenue","sum"),
-            avg_delivery=("delivery_days","mean"),
-            shipping_cost=("shipping_cost","sum")
-        ).reset_index().sort_values("revenue", ascending=False)
-        fig = px.bar(region_stats, x="region", y="revenue", color="avg_delivery",
-                     color_continuous_scale=["#00d4ff","#f59e0b","#ef4444"])
-        apply_layout(fig, "Region-wise Revenue & Avg Delivery Days")
-        fig.update_xaxes(tickangle=-30)
-        st.plotly_chart(fig, use_container_width=True)
-
-    with col2:
-        courier_stats = df.groupby("courier").agg(
-            orders=("order_id","count"),
-            avg_delivery=("delivery_days","mean"),
-            returns=("return_flag","sum"),
-            cost=("shipping_cost","sum")
-        ).reset_index()
-        fig2 = px.scatter(courier_stats, x="avg_delivery", y="cost",
-                          size="orders", color="returns", text="courier",
-                          color_continuous_scale=["#10b981","#ef4444"])
-        fig2.update_traces(textposition="top center", textfont_size=10)
-        apply_layout(fig2, "Courier: Delivery Days vs Cost (bubble=orders, color=returns)")
-        st.plotly_chart(fig2, use_container_width=True)
-
-    # Delivery time distribution
-    col3, col4 = st.columns(2)
+    col3,col4 = st.columns(2)
     with col3:
-        fig3 = px.histogram(df, x="delivery_days", color="region", nbins=10,
-                            barmode="overlay", opacity=0.7,
-                            color_discrete_sequence=["#00d4ff","#7c3aed","#f59e0b","#10b981","#ef4444","#3b82f6","#ec4899","#8b5cf6","#06b6d4","#84cc16"])
-        apply_layout(fig3, "Delivery Days Distribution by Region")
-        st.plotly_chart(fig3, use_container_width=True)
-
+        reg = df.groupby("Region")["Revenue_INR"].sum().sort_values().reset_index()
+        fig3 = go.Figure(go.Bar(x=reg["Revenue_INR"],y=reg["Region"],orientation="h",
+                                 marker=dict(color=reg["Revenue_INR"],colorscale=[[0,"#1a2235"],[0.5,"#0e4d6e"],[1,"#00d4ff"]])))
+        fmt(fig3,"Region-wise Revenue"); st.plotly_chart(fig3,use_container_width=True)
     with col4:
-        wh_region = df.groupby(["warehouse","region"])["order_id"].count().reset_index()
-        wh_region.columns = ["warehouse","region","orders"]
-        fig4 = px.sunburst(wh_region, path=["warehouse","region"], values="orders",
-                           color="orders", color_continuous_scale=["#1a1040","#7c3aed","#00d4ff"])
-        apply_layout(fig4, "Warehouse → Region Order Flow")
-        st.plotly_chart(fig4, use_container_width=True)
+        top = df.groupby("Product_Name")["Quantity"].sum().sort_values(ascending=False).head(15).reset_index()
+        fig4 = px.bar(top,x="Quantity",y="Product_Name",orientation="h",color="Quantity",
+                      color_continuous_scale=["#1a1040","#7c3aed","#00d4ff"])
+        fig4.update_layout(showlegend=False,coloraxis_showscale=False,yaxis=dict(autorange="reversed"))
+        fmt(fig4,"Top 15 SKUs by Units Sold"); st.plotly_chart(fig4,use_container_width=True)
 
-    # Cost optimization simulation
-    st.markdown("### 💡 Shipping Cost Optimization Simulation")
-    st.markdown("Simulating cost savings from courier reallocation based on avg delivery performance:")
-    region_courier = df.groupby(["region","courier"]).agg(
-        orders=("order_id","count"),
-        avg_days=("delivery_days","mean"),
-        avg_cost=("shipping_cost","mean")
-    ).reset_index()
-    # Best courier per region = lowest cost among those with avg_days <= 5
-    best = region_courier[region_courier["avg_days"] <= 5].sort_values("avg_cost").groupby("region").first().reset_index()
-    best["Recommendation"] = best["courier"] + f" (avg ₹" + best["avg_cost"].round(1).astype(str) + ", " + best["avg_days"].round(1).astype(str) + " days)"
-    current_cost = df["shipping_cost"].sum()
-    if not best.empty:
-        optimized_cost = current_cost * 0.87
-        savings = current_cost - optimized_cost
-        sc1, sc2, sc3 = st.columns(3)
-        sc1.metric("Current Shipping Cost", f"₹{current_cost/1e6:.3f}M")
-        sc2.metric("Optimized Cost (est.)", f"₹{optimized_cost/1e6:.3f}M", delta=f"-₹{savings/1e3:.1f}K", delta_color="inverse")
-        sc3.metric("Est. Savings", f"₹{savings/1e3:.1f}K (13%)")
-        st.markdown("#### Recommended Couriers by Region")
-        st.dataframe(best[["region","courier","avg_days","avg_cost"]].rename(
-            columns={"avg_days":"Avg Delivery Days","avg_cost":"Avg Cost (₹)"}
-        ), use_container_width=True, hide_index=True)
+    col5,col6 = st.columns(2)
+    with col5:
+        ch = df.groupby(["Month","Sales_Channel"])["Revenue_INR"].sum().reset_index()
+        fig5 = px.bar(ch,x="Month",y="Revenue_INR",color="Sales_Channel",barmode="stack",
+                      color_discrete_sequence=["#00d4ff","#7c3aed","#f59e0b"])
+        fig5.update_xaxes(tickangle=-45); fmt(fig5,"Revenue by Sales Channel Over Time"); st.plotly_chart(fig5,use_container_width=True)
+    with col6:
+        sc = df["Order_Status"].value_counts().reset_index(); sc.columns=["Status","Count"]
+        cm = {"Delivered":"#10b981","Shipped":"#00d4ff","Returned":"#f59e0b","Cancelled":"#ef4444"}
+        fig6 = px.pie(sc,names="Status",values="Count",hole=0.5,color="Status",color_discrete_map=cm)
+        fmt(fig6,"Order Status Distribution"); st.plotly_chart(fig6,use_container_width=True)
 
+# ══════════════════════════════════════════════════════
+# PAGE 2 — DEMAND FORECASTING
+# ══════════════════════════════════════════════════════
+def page_forecasting(df):
+    st.markdown("<div class='ph'><h1>📈 Demand Forecasting</h1><p>SARIMAX models on 15 months of history · Predicts Apr–Jun 2025 demand for all 50 SKUs</p></div>", unsafe_allow_html=True)
+    with st.spinner("⚙️ Fitting SARIMAX models for all 50 SKUs..."):
+        fcs = run_all_forecasts(df)
 
-# ═══════════════════════════════════════════════════════════════════════════════
-# MODULE 6: AI DECISION INTELLIGENCE CHATBOT
-# ═══════════════════════════════════════════════════════════════════════════════
-def build_context(df, forecast_results, inv_df):
-    """Build a rich context dict from all modules for the chatbot."""
-    delivered = df[df["order_status"] == "Delivered"]
-    top_revenue_product = df.groupby("product")["revenue"].sum().idxmax()
-    top_region = df.groupby("region")["revenue"].sum().idxmax()
-    high_return = df.groupby("product")["return_flag"].mean().idxmax()
+    products = sorted(fcs.keys())
+    col1,col2 = st.columns([1,3])
+    with col1:
+        sel = st.selectbox("🔍 Select SKU", products)
+        r = fcs[sel]
+        st.markdown("---")
+        st.metric("Model",       r["method"])
+        st.metric("RMSE",        f"{r['rmse']:.2f}")
+        st.metric("NRMSE",       f"{r['nrmse']:.4f}")
+        st.metric("Avg Demand",  f"{r['avg_monthly']:.1f} u/mo")
+        st.metric("Trend",       r["trend"])
+        st.markdown("**Forecast (units)**")
+        for lbl, val in zip(r["future_months"], r["forecast"]):
+            st.metric(lbl, f"{int(max(0,val))} units")
 
-    # Forecast insights
-    top_forecast = max(forecast_results.items(), key=lambda x: x[1]["forecast"].values[0] if len(x[1]["forecast"])>0 else 0)
+    with col2:
+        hx, hy = r["history_x"], r["history"].values
+        fx, fy = r["future_months"], [max(0,v) for v in r["forecast"]]
+        lo_y   = [max(0,v) for v in r["lo"]]
+        hi_y   = [max(0,v) for v in r["hi"]]
+        bx = [hx[-1]] + fx
+        by = [float(hy[-1])] + fy
+        blo= [float(hy[-1])] + lo_y
+        bhi= [float(hy[-1])] + hi_y
 
-    # Inventory
-    high_rop = inv_df.sort_values("Reorder Point (units)", ascending=False).iloc[0] if not inv_df.empty else None
-    low_eoq = inv_df.sort_values("EOQ (units)").iloc[0] if not inv_df.empty else None
+        fig = go.Figure()
+        fig.add_trace(go.Scatter(x=hx,y=hy,name="Historical",line=dict(color="#00d4ff",width=2.5),mode="lines+markers",marker=dict(size=5)))
+        fig.add_trace(go.Scatter(x=bx+bx[::-1],y=bhi+blo[::-1],fill="toself",fillcolor="rgba(124,58,237,0.15)",
+                                  line=dict(color="rgba(0,0,0,0)"),name="80% CI"))
+        fig.add_trace(go.Scatter(x=bx,y=by,name="Forecast",line=dict(color="#7c3aed",width=2.5,dash="dash"),
+                                  mode="lines+markers",marker=dict(size=9,symbol="diamond",color="#7c3aed")))
+        for ann in ["2024-10","2024-11"]:
+            if ann in hx:
+                fig.add_vline(x=hx.index(ann),line=dict(color="#f59e0b",dash="dot",width=1),
+                              annotation_text="Festive",annotation_font_color="#f59e0b",annotation_position="top")
+        fmt(fig,f"Monthly Demand Forecast — {sel}"); fig.update_xaxes(tickangle=-45)
+        st.plotly_chart(fig,use_container_width=True)
 
-    ctx = {
-        "total_orders": len(df),
-        "total_revenue": delivered["revenue"].sum(),
-        "top_revenue_product": top_revenue_product,
-        "top_region_revenue": top_region,
-        "high_return_product": high_return,
-        "avg_delivery_days": df["delivery_days"].mean(),
-        "top_forecast_product": top_forecast[0],
-        "top_forecast_next_month": int(top_forecast[1]["forecast"].values[0]),
-        "inv_df": inv_df,
-        "forecast_results": forecast_results,
-        "df": df
-    }
-    return ctx
+    st.markdown("### 📋 All SKUs Forecast Summary")
+    rows = []
+    for p,r in fcs.items():
+        fv=[max(0,int(v)) for v in r["forecast"]]
+        cat=df[df["Product_Name"]==p]["Category"].iloc[0]
+        rows.append({"Product":p,"Category":cat,"Model":r["method"],"Avg Monthly":round(r["avg_monthly"],1),
+                     "RMSE":r["rmse"],"NRMSE":r["nrmse"],"Trend":r["trend"],
+                     f"Fcst {r['future_months'][0]}":fv[0] if len(fv)>0 else 0,
+                     f"Fcst {r['future_months'][1]}":fv[1] if len(fv)>1 else 0,
+                     f"Fcst {r['future_months'][2]}":fv[2] if len(fv)>2 else 0})
+    sdf = pd.DataFrame(rows).sort_values("Avg Monthly",ascending=False)
+    st.dataframe(sdf,use_container_width=True,hide_index=True)
 
-def chatbot_response(user_msg, ctx):
-    """
-    Context-aware rule-based + keyword NLP chatbot.
-    Uses module outputs from all 5 other modules.
-    """
-    msg = user_msg.lower().strip()
-    inv_df = ctx["inv_df"]
-    forecast_results = ctx["forecast_results"]
-    df_all = ctx["df"]
+    fig2 = px.bar(sdf.sort_values("RMSE",ascending=False).head(20),x="Product",y="RMSE",color="NRMSE",
+                  color_continuous_scale=["#10b981","#f59e0b","#ef4444"])
+    fig2.update_xaxes(tickangle=-45); fmt(fig2,"Top 20 SKUs — Forecast RMSE")
+    st.plotly_chart(fig2,use_container_width=True)
 
-    # ── Demand / Forecast queries ──────────────────────────────────────────────
-    if any(k in msg for k in ["highest demand", "top demand", "most demand", "demand next month", "forecast next"]):
-        prod = ctx["top_forecast_product"]
-        qty = ctx["top_forecast_next_month"]
-        return f"""📈 **Highest Forecasted Demand — Next Month**
+# ══════════════════════════════════════════════════════
+# PAGE 3 — INVENTORY
+# ══════════════════════════════════════════════════════
+def page_inventory(df):
+    st.markdown("<div class='ph'><h1>🏭 Inventory Optimization</h1><p>Safety Stock · Reorder Point · EOQ — all derived from SARIMAX forecasts</p></div>", unsafe_allow_html=True)
+    with st.spinner("Calculating inventory policies..."):
+        fcs = run_all_forecasts(df); inv = compute_inventory(df, fcs)
 
-Product: **{prod}**
-Predicted Units: **{qty:,}**
+    c1,c2,c3,c4 = st.columns(4)
+    c1.metric("Total Safety Stock", f"{inv['Safety Stock'].sum():,} units")
+    c2.metric("Avg Reorder Point",  f"{inv['Reorder Point'].mean():.0f} units")
+    c3.metric("Avg EOQ",            f"{inv['EOQ'].mean():.0f} units")
+    c4.metric("High-Demand SKUs",   str(len(inv[inv["Avg Monthly Demand"]>10])))
+    st.markdown("---")
+    st.markdown("### 📋 Full Inventory Policy Table")
+    st.dataframe(inv,use_container_width=True,hide_index=True)
 
-This is based on SARIMAX time-series forecasting trained on 14 months of sales data.
-Category: {df_all[df_all['product']==prod]['category'].values[0]}"""
+    col1,col2 = st.columns(2)
+    with col1:
+        top=inv.head(15)
+        fig=px.bar(top,x="Product",y=["Safety Stock","Reorder Point"],barmode="group",
+                   color_discrete_map={"Safety Stock":"#00d4ff","Reorder Point":"#7c3aed"})
+        fig.update_xaxes(tickangle=-45); fmt(fig,"Safety Stock vs Reorder Point (Top 15)")
+        st.plotly_chart(fig,use_container_width=True)
+    with col2:
+        fig2=px.scatter(inv,x="Avg Monthly Demand",y="EOQ",size="Safety Stock",color="Unit Price (₹)",
+                        hover_name="Product",color_continuous_scale=["#1a1040","#7c3aed","#00d4ff"])
+        fmt(fig2,"EOQ vs Demand (bubble = Safety Stock)"); st.plotly_chart(fig2,use_container_width=True)
 
-    if "forecast" in msg or "predict" in msg:
-        # Check if product mentioned
-        for prod in forecast_results.keys():
-            if prod.lower() in msg:
-                res = forecast_results[prod]
-                fv = [max(0, int(v)) for v in res["forecast"].values]
-                return f"""📈 **Forecast for {prod}**
+    inv["CV"] = inv["Std Dev"] / (inv["Avg Monthly Demand"]+1e-3)
+    inv["Risk"] = pd.cut(inv["CV"],bins=[-0.1,0.3,0.7,999],labels=["Low","Medium","High"])
+    col3,col4 = st.columns([1,2])
+    with col3:
+        rc=inv["Risk"].value_counts().reset_index(); rc.columns=["Risk","Count"]
+        fig3=px.pie(rc,names="Risk",values="Count",hole=0.5,color="Risk",
+                    color_discrete_map={"Low":"#10b981","Medium":"#f59e0b","High":"#ef4444"})
+        fmt(fig3,"SKU Risk Distribution (CV-based)"); st.plotly_chart(fig3,use_container_width=True)
+    with col4:
+        hi=inv[inv["Risk"]=="High"].sort_values("CV",ascending=False)
+        if not hi.empty:
+            st.markdown("#### ⚠️ High-Risk SKUs")
+            st.dataframe(hi[["Product","Avg Monthly Demand","Std Dev","Safety Stock","Reorder Point","EOQ"]].head(10),
+                         use_container_width=True,hide_index=True)
 
-• Next Month (M+1): **{fv[0] if len(fv)>0 else 'N/A'} units**
-• Month +2: **{fv[1] if len(fv)>1 else 'N/A'} units**
-• Month +3: **{fv[2] if len(fv)>2 else 'N/A'} units**
-• RMSE: {res['rmse']:.2f} | NRMSE: {res['nrmse']:.3f}
-• Avg Historical Demand: {res['monthly_avg']:.0f} units/month"""
-        return f"""📈 **Top 5 Products by Forecasted Next Month Demand**
-{chr(10).join([f"• {p}: {max(0,int(r['forecast'].values[0])) if len(r['forecast'])>0 else 0} units" for p,r in sorted(forecast_results.items(), key=lambda x: x[1]['forecast'].values[0] if len(x[1]['forecast'])>0 else 0, reverse=True)[:5]])}"""
+# ══════════════════════════════════════════════════════
+# PAGE 4 — PRODUCTION
+# ══════════════════════════════════════════════════════
+def page_production(df):
+    st.markdown("<div class='ph'><h1>⚙️ Production Planning</h1><p>Capacity planning from SARIMAX forecasts + safety stock buffer — Apr to Jun 2025</p></div>", unsafe_allow_html=True)
+    with st.spinner("Building production plan..."):
+        fcs=run_all_forecasts(df); inv=compute_inventory(df,fcs)
 
-    # ── Inventory queries ──────────────────────────────────────────────────────
-    if "reorder point" in msg or "reorder" in msg:
-        for prod in inv_df["Product"].values:
-            if prod.lower() in msg:
-                row = inv_df[inv_df["Product"]==prod].iloc[0]
-                return f"""📦 **Inventory Policy — {prod}**
+    c1,c2,c3 = st.columns(3)
+    capacity   = c1.slider("Monthly Capacity per SKU (units)", 50, 2000, 500, 50)
+    buffer_pct = c2.slider("Production Buffer %", 5, 30, 15)
+    horizon    = c3.selectbox("Planning Horizon (months)", [1,2,3], index=2)
 
-• Reorder Point: **{row['Reorder Point (units)']} units**
-• Safety Stock: **{row['Safety Stock']} units**
-• EOQ: **{row['EOQ (units)']} units**
-• Lead Time: {row['Lead Time (days)']} days
-• Unit Price: ₹{row['Unit Price (₹)']}
+    records = []
+    for prod, r in fcs.items():
+        fv=[max(0,v) for v in r["forecast"]]
+        ss_row=inv[inv["Product"]==prod]
+        ss=int(ss_row["Safety Stock"].values[0]) if not ss_row.empty else 5
+        for i in range(min(horizon,len(fv))):
+            demand=fv[i]; required=demand+ss
+            planned=min(capacity,required*(1+buffer_pct/100))
+            gap=required-planned; cap_pct=planned/capacity*100
+            records.append({"Product":prod,"Month":r["future_months"][i] if i<len(r["future_months"]) else f"M+{i+1}",
+                            "Forecast Demand":round(demand),"Safety Stock":ss,"Required":round(required),
+                            "Planned Prod.":round(planned),"Cap Util %":round(cap_pct,1),
+                            "Gap":round(max(0,gap)),"Status":"⚠️ Shortage" if gap>0 else "✅ OK"})
+    plan=pd.DataFrame(records)
+    kc1,kc2,kc3,kc4=st.columns(4)
+    kc1.metric("Total Planned",f"{plan['Planned Prod.'].sum():,}")
+    kc2.metric("Total Demand", f"{plan['Forecast Demand'].sum():,}")
+    kc3.metric("Avg Cap Util", f"{plan['Cap Util %'].mean():.1f}%")
+    kc4.metric("SKUs Shortage",str(plan[plan["Gap"]>0]["Product"].nunique()))
+    st.markdown("### 📋 Production Plan")
+    st.dataframe(plan,use_container_width=True,hide_index=True)
 
-When stock drops to {row['Reorder Point (units)']} units, place an order of {row['EOQ (units)']} units."""
-        top_rop = inv_df.sort_values("Reorder Point (units)", ascending=False).head(5)
-        return f"""📦 **Top 5 Products by Reorder Point**
-{chr(10).join([f"• {r['Product']}: {r['Reorder Point (units)']} units (Safety: {r['Safety Stock']})" for _,r in top_rop.iterrows()])}"""
+    m1=plan[plan["Month"]==plan["Month"].unique()[0]].sort_values("Forecast Demand",ascending=False).head(15)
+    col1,col2=st.columns(2)
+    with col1:
+        fig=go.Figure()
+        fig.add_trace(go.Bar(x=m1["Product"],y=m1["Forecast Demand"],name="Demand",marker_color="#00d4ff",opacity=0.8))
+        fig.add_trace(go.Bar(x=m1["Product"],y=m1["Planned Prod."],name="Planned",marker_color="#7c3aed",opacity=0.8))
+        fig.update_layout(barmode="group"); fig.update_xaxes(tickangle=-45)
+        fmt(fig,f"Demand vs Planned Production — {m1['Month'].iloc[0]}"); st.plotly_chart(fig,use_container_width=True)
+    with col2:
+        fig2=px.bar(m1.sort_values("Cap Util %",ascending=False),x="Product",y="Cap Util %",
+                    color="Cap Util %",color_continuous_scale=["#10b981","#f59e0b","#ef4444"])
+        fig2.add_hline(y=100,line_dash="dash",line_color="#ef4444",annotation_text="Full Capacity")
+        fig2.update_xaxes(tickangle=-45); fmt(fig2,"Capacity Utilisation by SKU"); st.plotly_chart(fig2,use_container_width=True)
 
-    if "safety stock" in msg:
-        for prod in inv_df["Product"].values:
-            if prod.lower() in msg:
-                row = inv_df[inv_df["Product"]==prod].iloc[0]
-                return f"📦 **{prod}** — Safety Stock: **{row['Safety Stock']} units** (Z=1.645, 95% service level)"
-        return f"📦 **Products with Highest Safety Stock:**\n" + "\n".join([f"• {r['Product']}: {r['Safety Stock']} units" for _,r in inv_df.sort_values("Safety Stock", ascending=False).head(5).iterrows()])
+    short=plan[plan["Gap"]>0]
+    if not short.empty:
+        st.warning(f"⚠️ {short['Product'].nunique()} SKUs have projected shortages.")
+        st.dataframe(short[["Product","Month","Forecast Demand","Planned Prod.","Gap"]].sort_values("Gap",ascending=False).head(15),
+                     use_container_width=True,hide_index=True)
 
-    if "eoq" in msg or "economic order" in msg:
-        for prod in inv_df["Product"].values:
-            if prod.lower() in msg:
-                row = inv_df[inv_df["Product"]==prod].iloc[0]
-                return f"⚖️ **EOQ for {prod}**: **{row['EOQ (units)']} units** per order\nUnit Price: ₹{row['Unit Price (₹)']} | Holding Cost: 20%/yr"
-        return "⚖️ Ask about EOQ for a specific product, e.g. 'What is the EOQ for Wireless Earbuds?'"
+# ══════════════════════════════════════════════════════
+# PAGE 5 — LOGISTICS
+# ══════════════════════════════════════════════════════
+def page_logistics(df):
+    st.markdown("<div class='ph'><h1>🚚 Logistics Optimization</h1><p>Region routing · Courier benchmarking · Delivery time & cost simulation</p></div>", unsafe_allow_html=True)
+    dlv=df[df["Order_Status"]=="Delivered"]
+    l1,l2,l3,l4=st.columns(4)
+    l1.metric("Avg Delivery Days",  f"{dlv['Delivery_Days'].mean():.1f}")
+    l2.metric("Total Shipping Cost",f"₹{df['Shipping_Cost_INR'].sum()/1e3:.1f}K")
+    l3.metric("Best Courier",       df.groupby("Courier_Partner")["Delivery_Days"].mean().idxmin())
+    l4.metric("Return Rate",        f"{df['Return_Flag'].mean()*100:.1f}%")
+    st.markdown("---")
 
-    # ── Logistics queries ──────────────────────────────────────────────────────
-    if any(k in msg for k in ["logistics support", "logistics", "region delivery", "which region", "slow delivery", "delivery issue"]):
-        region_stats = df_all.groupby("region").agg(
-            avg_days=("delivery_days","mean"),
-            return_rate=("return_flag","mean")
-        ).reset_index()
-        worst = region_stats.sort_values("avg_days", ascending=False).head(3)
-        return f"""🚚 **Regions Needing More Logistics Support**
+    col1,col2=st.columns(2)
+    with col1:
+        reg=df.groupby("Region").agg(revenue=("Revenue_INR","sum"),avg_days=("Delivery_Days","mean")).reset_index()
+        fig=px.bar(reg,x="Region",y="revenue",color="avg_days",
+                   color_continuous_scale=["#00d4ff","#f59e0b","#ef4444"])
+        fig.update_xaxes(tickangle=-30); fmt(fig,"Region Revenue & Avg Delivery Days"); st.plotly_chart(fig,use_container_width=True)
+    with col2:
+        cour=df.groupby("Courier_Partner").agg(orders=("Order_ID","count"),avg_days=("Delivery_Days","mean"),
+                                                returns=("Return_Flag","sum"),cost=("Shipping_Cost_INR","mean")).reset_index()
+        fig2=px.scatter(cour,x="avg_days",y="cost",size="orders",color="returns",text="Courier_Partner",
+                        color_continuous_scale=["#10b981","#ef4444"])
+        fig2.update_traces(textposition="top center",textfont_size=10)
+        fmt(fig2,"Courier: Speed vs Cost (bubble=volume)"); st.plotly_chart(fig2,use_container_width=True)
 
-Top 3 by Avg Delivery Days:
-{chr(10).join([f"• {r['region']}: {r['avg_days']:.1f} days avg, {r['return_rate']*100:.1f}% returns" for _,r in worst.iterrows()])}
+    col3,col4=st.columns(2)
+    with col3:
+        fig3=px.histogram(df,x="Delivery_Days",color="Region",nbins=8,barmode="overlay",opacity=0.65,
+                          color_discrete_sequence=["#00d4ff","#7c3aed","#f59e0b","#10b981","#ef4444",
+                                                   "#3b82f6","#ec4899","#8b5cf6","#06b6d4","#84cc16"])
+        fmt(fig3,"Delivery Days Distribution by Region"); st.plotly_chart(fig3,use_container_width=True)
+    with col4:
+        wh=df.groupby(["Warehouse","Region"])["Order_ID"].count().reset_index()
+        wh.columns=["Warehouse","Region","Orders"]
+        fig4=px.sunburst(wh,path=["Warehouse","Region"],values="Orders",color="Orders",
+                         color_continuous_scale=["#1a1040","#7c3aed","#00d4ff"])
+        fmt(fig4,"Warehouse → Region Flow"); st.plotly_chart(fig4,use_container_width=True)
 
-**Recommendation**: Increase warehouse allocation and negotiate better SLA with couriers in these regions."""
+    st.markdown("### 💡 Courier Cost Optimisation Simulation")
+    bc=df.groupby(["Region","Courier_Partner"]).agg(avg_days=("Delivery_Days","mean"),avg_cost=("Shipping_Cost_INR","mean"),
+                                                     orders=("Order_ID","count")).reset_index()
+    bc=bc[bc["avg_days"]<=5].sort_values("avg_cost").groupby("Region").first().reset_index()
+    cur=df["Shipping_Cost_INR"].sum(); opt=cur*0.87; sav=cur-opt
+    sc1,sc2,sc3=st.columns(3)
+    sc1.metric("Current Shipping", f"₹{cur/1e3:.1f}K")
+    sc2.metric("Optimised (est.)", f"₹{opt/1e3:.1f}K",delta=f"-₹{sav/1e3:.1f}K",delta_color="inverse")
+    sc3.metric("Potential Saving",  f"₹{sav/1e3:.1f}K (13%)")
+    if not bc.empty:
+        st.dataframe(bc[["Region","Courier_Partner","avg_days","avg_cost"]].rename(
+            columns={"avg_days":"Avg Days","avg_cost":"Avg Cost ₹"}),use_container_width=True,hide_index=True)
 
-    if "courier" in msg or "shipping" in msg or "delivery" in msg:
-        courier_stats = df_all.groupby("courier").agg(
-            avg_days=("delivery_days","mean"),
-            cost=("shipping_cost","mean"),
-            orders=("order_id","count")
-        ).reset_index().sort_values("avg_days")
-        best = courier_stats.iloc[0]
-        worst = courier_stats.iloc[-1]
-        return f"""🚚 **Courier Performance Summary**
+# ══════════════════════════════════════════════════════
+# PAGE 6 — CHATBOT
+# ══════════════════════════════════════════════════════
+def _chat(msg, ctx):
+    msg_l = msg.lower().strip()
+    fcs, inv, df = ctx["fcs"], ctx["inv"], ctx["df"]
 
-✅ Best: **{best['courier']}** — {best['avg_days']:.1f} days avg, ₹{best['cost']:.0f} avg cost
-⚠️ Worst: **{worst['courier']}** — {worst['avg_days']:.1f} days avg, ₹{worst['cost']:.0f} avg cost
+    if any(k in msg_l for k in ["highest demand","top demand","demand next","forecast next","most demand"]):
+        p=ctx["top_forecast_prod"]; v=ctx["top_forecast_val"]
+        cat=df[df["Product_Name"]==p]["Category"].iloc[0]
+        mns=fcs[p]["future_months"]; fv=[max(0,int(x)) for x in fcs[p]["forecast"]]
+        return (f"📈 **Highest Forecasted Demand**\n\n**{p}** ({cat})\n"
+                f"• {mns[0]}: **{fv[0]} units**\n• {mns[1]}: {fv[1]} units\n• {mns[2]}: {fv[2]} units\n\n"
+                f"Model: {fcs[p]['method']} | RMSE: {fcs[p]['rmse']} | Trend: {fcs[p]['trend']}")
 
-Courier Rankings by Speed:
-{chr(10).join([f"• {r['courier']}: {r['avg_days']:.1f} days, ₹{r['cost']:.0f}/order" for _,r in courier_stats.iterrows()])}"""
+    for prod in sorted(fcs.keys(), key=len, reverse=True):
+        if prod.lower() in msg_l:
+            r=fcs[prod]; fv=[max(0,int(x)) for x in r["forecast"]]; mns=r["future_months"]
+            if any(k in msg_l for k in ["reorder","safety stock","eoq","inventory","stock"]):
+                row=inv[inv["Product"]==prod]
+                if not row.empty:
+                    row=row.iloc[0]
+                    return (f"📦 **Inventory Policy — {prod}**\n\n"
+                            f"• Safety Stock: **{row['Safety Stock']} units**\n"
+                            f"• Reorder Point: **{row['Reorder Point']} units**\n"
+                            f"• EOQ: **{row['EOQ']} units**\n"
+                            f"• Stock Needed M+1: {row['Stock Needed (M+1)']} units\n"
+                            f"• Unit Price: ₹{row['Unit Price (₹)']} | Lead Time: {row['Lead Time (days)']} days")
+            return (f"📈 **Forecast — {prod}**\n\n"
+                    f"• {mns[0]}: **{fv[0]} units**\n• {mns[1]}: {fv[1]} units\n• {mns[2]}: {fv[2]} units\n\n"
+                    f"Model: {r['method']} | Avg: {r['avg_monthly']:.1f} u/mo | Trend: {r['trend']} | RMSE: {r['rmse']}")
 
-    # ── Production queries ──────────────────────────────────────────────────────
-    if "production" in msg or "capacity" in msg or "manufacture" in msg:
-        top_demand = sorted(forecast_results.items(), key=lambda x: x[1]["forecast"].values[0] if len(x[1]["forecast"])>0 else 0, reverse=True)[:5]
-        return f"""⚙️ **Production Planning Insight**
+    if "forecast" in msg_l or "predict" in msg_l:
+        top5=sorted(fcs.items(),key=lambda x:x[1]["forecast"][0] if len(x[1]["forecast"])>0 else 0,reverse=True)[:5]
+        lines="\n".join([f"• {p}: {max(0,int(r['forecast'][0]))} units ({r['trend']})" for p,r in top5])
+        return f"📈 **Top 5 SKUs — Next Month Forecast ({list(fcs.values())[0]['future_months'][0]})**\n\n{lines}"
 
-Top 5 Products Requiring Highest Production Next Month:
-{chr(10).join([f"• {p}: ~{max(0,int(r['forecast'].values[0]))} units forecasted" for p,r in top_demand])}
+    if "reorder" in msg_l:
+        top=inv.sort_values("Reorder Point",ascending=False).head(5)
+        lines="\n".join([f"• {r['Product']}: {r['Reorder Point']} units (SS={r['Safety Stock']})" for _,r in top.iterrows()])
+        return f"📦 **Top 5 by Reorder Point**\n\n{lines}"
+    if "safety stock" in msg_l:
+        top=inv.sort_values("Safety Stock",ascending=False).head(5)
+        lines="\n".join([f"• {r['Product']}: {r['Safety Stock']} units" for _,r in top.iterrows()])
+        return f"📦 **Top 5 by Safety Stock**\n\n{lines}"
+    if "eoq" in msg_l or "economic order" in msg_l:
+        top=inv.sort_values("EOQ",ascending=False).head(5)
+        lines="\n".join([f"• {r['Product']}: {r['EOQ']} units" for _,r in top.iterrows()])
+        return f"⚖️ **Top 5 by EOQ**\n\n{lines}"
 
-**Note**: Apply 15% production buffer + safety stock requirements.
-Run the Production Planning module for full capacity analysis."""
+    if any(k in msg_l for k in ["logistics","slow delivery","region support","delivery issue","which region"]):
+        rs=df.groupby("Region").agg(avg_days=("Delivery_Days","mean"),rr=("Return_Flag","mean")).reset_index()
+        worst=rs.sort_values("avg_days",ascending=False).head(3)
+        lines="\n".join([f"• {r['Region']}: {r['avg_days']:.1f} days avg, {r['rr']*100:.1f}% returns" for _,r in worst.iterrows()])
+        return f"🚚 **Regions Needing Logistics Improvement**\n\n{lines}\n\nFix: Increase premium courier allocation."
+    if any(k in msg_l for k in ["courier","shipping speed","delivery performance"]):
+        cs=df.groupby("Courier_Partner").agg(avg_days=("Delivery_Days","mean"),cost=("Shipping_Cost_INR","mean")).reset_index().sort_values("avg_days")
+        best=cs.iloc[0]; lines="\n".join([f"• {r['Courier_Partner']}: {r['avg_days']:.1f} days, ₹{r['cost']:.0f}/order" for _,r in cs.iterrows()])
+        return f"🚚 **Courier Performance**\n\n✅ Best: **{best['Courier_Partner']}** ({best['avg_days']:.1f} days)\n\n{lines}"
 
-    # ── Revenue / Sales queries ────────────────────────────────────────────────
-    if "revenue" in msg or "sales" in msg or "best selling" in msg or "top product" in msg:
-        top5 = df_all.groupby("product")["revenue"].sum().sort_values(ascending=False).head(5)
-        return f"""💰 **Top 5 Products by Revenue**
+    if any(k in msg_l for k in ["revenue","sales","best selling","top product","highest revenue"]):
+        top5=df.groupby("Product_Name")["Revenue_INR"].sum().sort_values(ascending=False).head(5)
+        lines="\n".join([f"• {p}: ₹{v/1e3:.1f}K" for p,v in top5.items()])
+        return (f"💰 **Top 5 by Revenue**\n\n{lines}\n\n"
+                f"🏆 Overall: **{ctx['top_rev_product']}**\nTotal: ₹{ctx['total_revenue']/1e6:.2f}M")
 
-{chr(10).join([f"• {p}: ₹{v/1e6:.3f}M" for p,v in top5.items()])}
+    if "return" in msg_l:
+        rr=df.groupby("Product_Name")["Return_Flag"].mean().sort_values(ascending=False).head(5)
+        lines="\n".join([f"• {p}: {v*100:.1f}%" for p,v in rr.items()])
+        return f"↩️ **Highest Return-Rate SKUs**\n\n{lines}\n\nOverall: {ctx['return_rate']:.1f}%"
 
-🏆 Overall Top: **{ctx['top_revenue_product']}**
-📊 Total Revenue: ₹{ctx['total_revenue']/1e6:.2f}M across {ctx['total_orders']:,} orders"""
+    if any(k in msg_l for k in ["region","state","city","where"]):
+        rrev=df.groupby("Region")["Revenue_INR"].sum().sort_values(ascending=False)
+        lines="\n".join([f"• {r}: ₹{v/1e3:.1f}K" for r,v in rrev.items()])
+        return f"🗺️ **Region-wise Revenue**\n\n{lines}\n\n🥇 Top: **{ctx['top_region']}**"
 
-    if "return" in msg:
-        return f"""↩️ **Return Rate Analysis**
+    if any(k in msg_l for k in ["category","segment"]):
+        cats=df.groupby("Category")["Revenue_INR"].sum().sort_values(ascending=False)
+        lines="\n".join([f"• {c}: ₹{v/1e3:.1f}K" for c,v in cats.items()])
+        return f"📂 **Category-wise Revenue**\n\n{lines}"
 
-Product with Highest Returns: **{ctx['high_return_product']}**
-Overall Return Rate: {df_all['return_flag'].mean()*100:.1f}%
+    if any(k in msg_l for k in ["kpi","summary","overview","dashboard","snapshot"]):
+        return (f"📊 **OmniFlow-D2D KPI Snapshot**\n\n"
+                f"💰 Revenue: ₹{ctx['total_revenue']/1e6:.2f}M\n📦 Orders: {ctx['total_orders']:,}\n"
+                f"🏆 Top SKU: {ctx['top_rev_product']}\n📈 Highest Forecast M+1: {ctx['top_forecast_prod']} ({ctx['top_forecast_val']} units)\n"
+                f"🗺️ Top Region: {ctx['top_region']}\n🚚 Avg Delivery: {ctx['avg_delivery']:.1f} days\n↩️ Return Rate: {ctx['return_rate']:.1f}%")
 
-By Region:
-{chr(10).join([f"• {r['region']}: {r['return_flag']*100:.1f}%" for _,r in df_all.groupby('region')['return_flag'].mean().reset_index().sort_values('return_flag',ascending=False).head(5).iterrows()])}"""
+    if any(k in msg_l for k in ["hi","hello","hey","help","what can","commands"]):
+        return ("👋 **OmniFlow-D2D AI Assistant**\n\nAsk me about:\n\n"
+                "📈 'Forecast for boAt Airdopes 141 TWS'\n📈 'Which SKU has highest demand next month?'\n"
+                "📦 'Reorder point for Himalaya Face Wash'\n📦 'Top 5 safety stock'\n"
+                "🚚 'Which region needs logistics support?'\n🚚 'Best courier performance'\n"
+                "💰 'Top products by revenue'\n💰 'KPI summary'\n\n"
+                "Works for all 50 SKUs!")
 
-    if any(k in msg for k in ["region", "state", "city", "where"]):
-        reg_rev = df_all.groupby("region")["revenue"].sum().sort_values(ascending=False)
-        return f"""🗺️ **Region-wise Performance**
-
-Top Revenue Region: **{ctx['top_region_revenue']}**
-{chr(10).join([f"• {r}: ₹{v/1e6:.3f}M" for r,v in reg_rev.items()])}"""
-
-    if any(k in msg for k in ["hello", "hi", "hey", "help", "what can you"]):
-        return """👋 **Welcome to OmniFlow-D2D AI Assistant!**
-
-I can answer questions about:
-
-📈 **Demand Forecasting**
-• "Which product has highest demand next month?"
-• "What is the forecast for Wireless Earbuds?"
-
-📦 **Inventory Optimization**
-• "What is the reorder point for Monitor?"
-• "Which products need highest safety stock?"
-• "EOQ for Smart Watch?"
-
-⚙️ **Production Planning**
-• "Which products need most production?"
-• "What's the capacity utilization?"
-
-🚚 **Logistics**
-• "Which region needs more logistics support?"
-• "Which courier performs best?"
-
-💰 **Sales & Revenue**
-• "What are the best selling products?"
-• "Which region has highest sales?"
-
-Ask me anything! 🤖"""
-
-    if "kpi" in msg or "summary" in msg or "overview" in msg:
-        return f"""📊 **OmniFlow-D2D KPI Summary**
-
-💰 Total Revenue: ₹{ctx['total_revenue']/1e6:.2f}M
-📦 Total Orders: {ctx['total_orders']:,}
-🏆 Top Product (Revenue): {ctx['top_revenue_product']}
-📈 Highest Forecast (M+1): {ctx['top_forecast_product']} ({ctx['top_forecast_next_month']:,} units)
-🗺️ Top Revenue Region: {ctx['top_region_revenue']}
-🚚 Avg Delivery: {ctx['avg_delivery_days']:.1f} days
-↩️ Return Rate: {df_all['return_flag'].mean()*100:.1f}%"""
-
-    # Default fallback
-    return f"""🤖 I understand you're asking about: **"{user_msg}"**
-
-Try more specific queries like:
-• "Forecast for [Product Name]"
-• "Reorder point for [Product]"
-• "Which region needs logistics support?"
-• "Top selling products"
-• Type **"help"** for full command list
-
-Available products: {', '.join(list(forecast_results.keys())[:5])}..."""
+    sample=", ".join(list(fcs.keys())[:3])
+    return (f"🤖 Couldn't match: **\"{msg}\"**\n\nTry:\n• 'Forecast for [product]'\n• 'Reorder point for [product]'\n"
+            f"• 'KPI summary'\n\nSample SKUs: {sample}...\nType **help** for all commands.")
 
 def page_chatbot(df):
-    st.markdown("""
-    <div class='page-header'>
-        <h1>🤖 AI Decision Intelligence</h1>
-        <p>Context-aware chatbot powered by all module outputs — ask supply chain questions</p>
-    </div>
-    """, unsafe_allow_html=True)
-
-    with st.spinner("Building AI context from all modules..."):
-        forecast_results = get_forecast_results(df)
-        inv_df = compute_inventory(df, forecast_results)
-        ctx = build_context(df, forecast_results, inv_df)
-
-    # Initialize chat history
-    if "chat_history" not in st.session_state:
-        st.session_state.chat_history = [
-            ("bot", "👋 Hello! I'm your OmniFlow-D2D Supply Chain AI. I have full context from all modules. Ask me about demand forecasts, inventory, production, logistics, or sales! Type **help** for examples.")
-        ]
-
-    # Display chat
-    for role, msg in st.session_state.chat_history:
-        if role == "user":
-            st.markdown(f"<div class='chat-msg-user'>{msg}</div>", unsafe_allow_html=True)
-        else:
-            st.markdown(f"<div class='chat-msg-bot'>{msg}</div>", unsafe_allow_html=True)
-
-    st.markdown("---")
-
-    # Quick suggestions
-    st.markdown("**💡 Quick Queries:**")
-    qcols = st.columns(4)
-    quick_queries = [
-        "Highest demand next month",
-        "Which region needs logistics support?",
-        "Top 5 products by revenue",
-        "Show KPI summary",
-        "Reorder point for Monitor",
-        "Which courier is best?",
-        "Safety stock for Smart Watch",
-        "Production capacity insight"
-    ]
-    for i, qc in enumerate(qcols):
-        if qc.button(quick_queries[i], key=f"q{i}"):
-            st.session_state._quick_query = quick_queries[i]
-        if qc.button(quick_queries[i+4], key=f"q{i+4}"):
-            st.session_state._quick_query = quick_queries[i+4]
-
-    # Process quick query
-    if hasattr(st.session_state, "_quick_query") and st.session_state._quick_query:
-        q = st.session_state._quick_query
-        st.session_state._quick_query = None
-        response = chatbot_response(q, ctx)
-        st.session_state.chat_history.append(("user", q))
-        st.session_state.chat_history.append(("bot", response))
-        st.rerun()
-
-    # Text input
-    col_inp, col_btn = st.columns([4, 1])
-    with col_inp:
-        user_input = st.text_input("Ask a supply chain question...", key="chat_input", label_visibility="collapsed",
-                                    placeholder="e.g. What is the reorder point for Wireless Earbuds?")
-    with col_btn:
-        send = st.button("Send →")
-
-    if send and user_input.strip():
-        response = chatbot_response(user_input, ctx)
-        st.session_state.chat_history.append(("user", user_input))
-        st.session_state.chat_history.append(("bot", response))
-        st.rerun()
-
-    if st.button("🗑️ Clear Chat"):
-        st.session_state.chat_history = []
-        st.rerun()
-
-
-# ═══════════════════════════════════════════════════════════════════════════════
-# SIDEBAR NAVIGATION
-# ═══════════════════════════════════════════════════════════════════════════════
-def main():
-    # Load unified dataset
-    df = load_dataset()
-
-    # Sidebar
-    with st.sidebar:
-        st.markdown("<div class='logo-text'>⟳ OmniFlow-D2D</div>", unsafe_allow_html=True)
-        st.markdown("<div style='text-align:center; color:#64748b; font-size:0.7rem; font-family:Space Mono; margin-bottom:1rem;'>Data-to-Decision Platform</div>", unsafe_allow_html=True)
-        st.markdown("---")
-
-        pages = {
-            "📊 Overview Dashboard": "overview",
-            "📈 Demand Forecasting": "forecasting",
-            "🏭 Inventory Optimization": "inventory",
-            "⚙️ Production Planning": "production",
-            "🚚 Logistics Optimization": "logistics",
-            "🤖 AI Decision Intelligence": "chatbot"
+    st.markdown("<div class='ph'><h1>🤖 AI Decision Intelligence</h1><p>Context-aware chatbot — live outputs from all 5 modules for all 50 SKUs</p></div>", unsafe_allow_html=True)
+    with st.spinner("Loading AI context..."):
+        fcs=run_all_forecasts(df); inv=compute_inventory(df,fcs)
+        dlv=df[df["Order_Status"]=="Delivered"]
+        ctx={
+            "total_orders":len(df), "total_revenue":dlv["Revenue_INR"].sum(),
+            "top_rev_product":df.groupby("Product_Name")["Revenue_INR"].sum().idxmax(),
+            "top_region":df.groupby("Region")["Revenue_INR"].sum().idxmax(),
+            "avg_delivery":df["Delivery_Days"].mean(), "return_rate":df["Return_Flag"].mean()*100,
+            "top_forecast_prod":max(fcs,key=lambda p:fcs[p]["forecast"][0] if len(fcs[p]["forecast"])>0 else 0),
+            "top_forecast_val":int(max(fcs[p]["forecast"][0] if len(fcs[p]["forecast"])>0 else 0 for p in fcs)),
+            "fcs":fcs,"inv":inv,"df":df
         }
 
-        if "page" not in st.session_state:
-            st.session_state.page = "overview"
+    if "history" not in st.session_state:
+        st.session_state.history=[("bot","👋 Hello! I'm your OmniFlow-D2D Supply Chain AI.\n\nI have live context from all 5 modules for all 50 SKUs. Type **help** to see what I can do!")]
 
-        for label, key in pages.items():
-            active = "active" if st.session_state.page == key else ""
-            if st.button(label, key=f"nav_{key}", use_container_width=True):
-                st.session_state.page = key
-                st.rerun()
+    for role,text in st.session_state.history:
+        cls="chat-user" if role=="user" else "chat-bot"
+        safe=re.sub(r'\*\*(.+?)\*\*',r'<b>\1</b>',text.replace("\n","<br>"))
+        st.markdown(f"<div class='{cls}'>{safe}</div>",unsafe_allow_html=True)
 
+    st.markdown("---")
+    st.markdown("**💡 Quick Queries:**")
+    qs=["Highest demand next month","KPI summary","Region logistics support","Best courier",
+        "Reorder point for Samsung Galaxy M34 5G","Forecast for boAt Airdopes 141 TWS",
+        "Top 5 safety stock","Top products by revenue"]
+    cols=st.columns(4)
+    for i,q in enumerate(qs):
+        if cols[i%4].button(q,key=f"qb{i}"):
+            st.session_state._pq=q
+
+    if hasattr(st.session_state,"_pq") and st.session_state._pq:
+        q=st.session_state._pq; st.session_state._pq=None
+        st.session_state.history.append(("user",q)); st.session_state.history.append(("bot",_chat(q,ctx))); st.rerun()
+
+    ci,cb=st.columns([5,1])
+    user_in=ci.text_input("Ask a supply chain question...",key="chat_inp",label_visibility="collapsed",
+                           placeholder="e.g. Forecast for Himalaya Neem Face Wash")
+    if cb.button("Send →") and user_in.strip():
+        st.session_state.history.append(("user",user_in)); st.session_state.history.append(("bot",_chat(user_in,ctx))); st.rerun()
+    if st.button("🗑️ Clear Chat"):
+        st.session_state.history=[]; st.rerun()
+
+# ══════════════════════════════════════════════════════
+# MAIN
+# ══════════════════════════════════════════════════════
+def main():
+    df=load_data()
+    with st.sidebar:
+        st.markdown("<div class='logo'>⟳ OmniFlow-D2D</div>",unsafe_allow_html=True)
+        st.markdown("<div style='text-align:center;color:#374151;font-size:.65rem;font-family:Space Mono;margin-bottom:.5rem;'>Data-to-Decision Platform</div>",unsafe_allow_html=True)
         st.markdown("---")
-        # Dataset stats
-        st.markdown("<div style='color:#64748b; font-size:0.7rem; font-family:Space Mono; text-transform:uppercase; letter-spacing:0.1em;'>Dataset Stats</div>", unsafe_allow_html=True)
-        st.markdown(f"""
-        <div style='background:#111827; border:1px solid #1e293b; border-radius:8px; padding:0.75rem; margin-top:0.5rem;'>
-            <div style='font-family:Space Mono; font-size:0.7rem; color:#64748b;'>Records</div>
-            <div style='font-family:Space Mono; font-size:1rem; color:#00d4ff;'>{len(df):,}</div>
-            <div style='font-family:Space Mono; font-size:0.7rem; color:#64748b; margin-top:0.4rem;'>Products</div>
-            <div style='font-family:Space Mono; font-size:1rem; color:#7c3aed;'>{df['product'].nunique()}</div>
-            <div style='font-family:Space Mono; font-size:0.7rem; color:#64748b; margin-top:0.4rem;'>Date Range</div>
-            <div style='font-family:Space Mono; font-size:0.75rem; color:#94a3b8;'>Jan 2024 – Feb 2025</div>
-            <div style='font-family:Space Mono; font-size:0.7rem; color:#64748b; margin-top:0.4rem;'>Sources</div>
-            <div style='font-family:Space Mono; font-size:0.65rem; color:#94a3b8;'>Amazon India 2025<br>Shiprocket/INCREFF</div>
-        </div>
-        """, unsafe_allow_html=True)
+        pages={"📊 Overview Dashboard":"overview","📈 Demand Forecasting":"forecasting",
+               "🏭 Inventory Optimization":"inventory","⚙️ Production Planning":"production",
+               "🚚 Logistics Optimization":"logistics","🤖 AI Decision Intelligence":"chatbot"}
+        if "page" not in st.session_state: st.session_state.page="overview"
+        for label,key in pages.items():
+            if st.button(label,key=f"nav_{key}",use_container_width=True):
+                st.session_state.page=key; st.rerun()
+        st.markdown("---")
+        st.markdown(f"""<div style='background:#111827;border:1px solid #1e293b;border-radius:8px;padding:.8rem;font-family:Space Mono;font-size:.7rem;'>
+        <div style='color:#64748b;'>DATASET</div><div style='color:#00d4ff;font-size:.9rem;'>{len(df):,} Orders</div>
+        <div style='color:#64748b;margin-top:.4rem;'>SKUs</div><div style='color:#7c3aed;font-size:.9rem;'>{df["SKU_ID"].nunique()} Products</div>
+        <div style='color:#64748b;margin-top:.4rem;'>CATEGORIES</div><div style='color:#94a3b8;font-size:.75rem;'>Electronics · Home · Fashion · Health</div>
+        <div style='color:#64748b;margin-top:.4rem;'>DATE RANGE</div><div style='color:#94a3b8;font-size:.7rem;'>Jan 2024 → Mar 2025</div>
+        <div style='color:#64748b;margin-top:.4rem;'>FORECAST HORIZON</div><div style='color:#10b981;font-size:.7rem;'>Apr → Jun 2025</div>
+        <div style='color:#64748b;margin-top:.4rem;'>SOURCES</div><div style='color:#94a3b8;font-size:.65rem;'>Amazon India 2025<br>Shiprocket / INCREFF</div>
+        </div>""",unsafe_allow_html=True)
 
-        st.markdown("""
-        <div style='margin-top:1rem; color:#374151; font-size:0.65rem; text-align:center; font-family:Space Mono;'>
-        Built with Streamlit + Statsmodels<br>Plotly + Pandas + NumPy
-        </div>
-        """, unsafe_allow_html=True)
+    pg=st.session_state.get("page","overview")
+    if   pg=="overview":   page_overview(df)
+    elif pg=="forecasting": page_forecasting(df)
+    elif pg=="inventory":   page_inventory(df)
+    elif pg=="production":  page_production(df)
+    elif pg=="logistics":   page_logistics(df)
+    elif pg=="chatbot":     page_chatbot(df)
 
-    # Route to page
-    page = st.session_state.get("page", "overview")
-    if page == "overview":
-        page_overview(df)
-    elif page == "forecasting":
-        page_forecasting(df)
-    elif page == "inventory":
-        page_inventory(df)
-    elif page == "production":
-        page_production(df)
-    elif page == "logistics":
-        page_logistics(df)
-    elif page == "chatbot":
-        page_chatbot(df)
-
-if __name__ == "__main__":
+if __name__=="__main__":
     main()
+
