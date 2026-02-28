@@ -15,105 +15,80 @@ from sklearn.preprocessing import LabelEncoder
 # -----------------------------
 st.set_page_config(page_title="OmniFlow-D2D", layout="wide")
 
-st.markdown("""
-<style>
-body {background:#f9fafb; color:#111827; font-family:Segoe UI;}
-section[data-testid="stSidebar"] {background:#ffffff;}
-</style>
-""", unsafe_allow_html=True)
-
 st.title("📦 OmniFlow-D2D — Supply Chain Intelligence")
 
+# ======================================================================================
+# LOAD DATA (FIXED 🔥)
+# ======================================================================================
 @st.cache_data
 def load_data():
 
     df = pd.read_csv("OmniFlow_D2D_India_Unified_1000.csv")
-
-    # -----------------------------
-    # CLEAN COLUMN NAMES
-    # -----------------------------
     df.columns = [c.strip() for c in df.columns]
 
-    # -----------------------------
-    # CORE REQUIRED COLUMNS (STRICT)
-    # -----------------------------
-    REQUIRED = {
-        "Order_Date": "datetime",
-        "Product_Name": "str",
-        "Quantity": "numeric"
-    }
-
-    for col in REQUIRED:
-        if col not in df.columns:
-            st.error(f"Missing required column: {col}")
-            st.stop()
-
-    # -----------------------------
-    # DATE PROCESSING
-    # -----------------------------
+    # Convert date
     df["Order_Date"] = pd.to_datetime(df["Order_Date"])
 
-    # -----------------------------
-    # FEATURE ENGINEERING (CRITICAL)
-    # -----------------------------
-    df["Month"]       = df["Order_Date"].dt.to_period("M").astype(str)
-    df["Week"]        = df["Order_Date"].dt.to_period("W").astype(str)
-    df["Day_of_Week"] = df["Order_Date"].dt.day_name()
+    # Rename for model compatibility
+    df = df.rename(columns={
+        "Order_Date": "Date",
+        "Product_Name": "Product",
+        "Quantity": "Demand"
+    })
 
-    # -----------------------------
-    # ENSURE ALL FEATURES EXIST
-    # (THIS IS WHY YOUR APP WAS BREAKING)
-    # -----------------------------
+    # Feature Engineering
+    df["Month"] = df["Date"].dt.to_period("M").astype(str)
+    df["Week"] = df["Date"].dt.to_period("W").astype(str)
+    df["Day_of_Week"] = df["Date"].dt.day_name()
 
-    # Revenue
+    df["day"] = df["Date"].dt.day
+    df["month"] = df["Date"].dt.month
+    df["year"] = df["Date"].dt.year
+    df["weekday"] = df["Date"].dt.weekday
+
+    # Ensure required columns
     if "Revenue_INR" not in df.columns:
-        if "Sell_Price" in df.columns:
-            df["Revenue_INR"] = df["Quantity"] * df["Sell_Price"]
-        else:
-            df["Revenue_INR"] = df["Quantity"] * 100
+        df["Revenue_INR"] = df["Demand"] * df.get("Sell_Price", 100)
 
-    # Order Status
-    if "Order_Status" not in df.columns:
-        df["Order_Status"] = "Delivered"
-
-    # Returns
-    if "Return_Flag" not in df.columns:
-        df["Return_Flag"] = 0
-
-    # Delivery Days
-    if "Delivery_Days" not in df.columns:
-        df["Delivery_Days"] = np.random.randint(3, 7, len(df))
-
-    # Shipping Cost
     if "Shipping_Cost_INR" not in df.columns:
-        df["Shipping_Cost_INR"] = np.random.uniform(50, 120, len(df))
+        df["Shipping_Cost_INR"] = np.random.uniform(50,120,len(df))
 
-    # Courier
-    if "Courier_Partner" not in df.columns:
-        df["Courier_Partner"] = "Delhivery"
-
-    # Warehouse
-    if "Warehouse" not in df.columns:
-        df["Warehouse"] = "Default WH"
-
-    # Region
     if "Region" not in df.columns:
         df["Region"] = "India"
 
-    # Category fallback (important for dashboard)
+    if "Delivery_Days" not in df.columns:
+        df["Delivery_Days"] = np.random.randint(3,7,len(df))
+
+    if "Order_Status" not in df.columns:
+        df["Order_Status"] = "Delivered"
+
+    if "Return_Flag" not in df.columns:
+        df["Return_Flag"] = 0
+
+    if "Courier_Partner" not in df.columns:
+        df["Courier_Partner"] = "Delhivery"
+
+    if "Warehouse" not in df.columns:
+        df["Warehouse"] = "Default WH"
+
     if "Category" not in df.columns:
         df["Category"] = "General"
 
-    # -----------------------------
-    # FINAL SORT
-    # -----------------------------
-    return df.sort_values("Order_Date").reset_index(drop=True)
+    # Logistics mapping
+    df["Logistics"] = df["Shipping_Cost_INR"]
 
-# Lag features (IMPORTANT 🔥)
+    return df.sort_values("Date").reset_index(drop=True)
+
+# -----------------------------
+# LOAD
+# -----------------------------
+df = load_data()
+
+# ======================================================================================
+# FEATURE ENGINEERING (TIME SERIES)
+# ======================================================================================
 df['lag_1'] = df['Demand'].shift(1)
 df['lag_7'] = df['Demand'].shift(7)
-
-# Rolling features
 df['rolling_mean_7'] = df['Demand'].rolling(7).mean()
 df['rolling_std_7'] = df['Demand'].rolling(7).std()
 
@@ -126,17 +101,14 @@ le_r = LabelEncoder()
 df['product_enc'] = le_p.fit_transform(df['Product'])
 df['region_enc'] = le_r.fit_transform(df['Region'])
 
-# -----------------------------
-# MODEL FEATURES
-# -----------------------------
+# ======================================================================================
+# MODEL
+# ======================================================================================
 features = [
     'product_enc','region_enc','day','month','year','weekday',
     'lag_1','lag_7','rolling_mean_7','rolling_std_7'
 ]
 
-# -----------------------------
-# TRAIN / TEST SPLIT (TIME BASED)
-# -----------------------------
 train = df[df['Date'] < df['Date'].max() - pd.Timedelta(days=30)]
 test = df[df['Date'] >= df['Date'].max() - pd.Timedelta(days=30)]
 
@@ -149,13 +121,12 @@ y_test = test['Demand']
 model = RandomForestRegressor(n_estimators=200, max_depth=10)
 model.fit(X_train, y_train)
 
-# Evaluation
 pred_test = model.predict(X_test)
 rmse = np.sqrt(mean_squared_error(y_test, pred_test))
 
-# -----------------------------
+# ======================================================================================
 # SIDEBAR
-# -----------------------------
+# ======================================================================================
 module = st.sidebar.selectbox("Module", [
     "Overview",
     "Forecasting",
@@ -170,17 +141,15 @@ module = st.sidebar.selectbox("Module", [
 # ======================================================================================
 if module == "Overview":
 
-    st.metric("RMSE (Model Accuracy)", round(rmse,2))
+    st.metric("RMSE", round(rmse,2))
 
     fig = px.line(df, x='Date', y='Demand')
     st.plotly_chart(fig, use_container_width=True)
 
 # ======================================================================================
-# FORECASTING (ITERATIVE 🔥)
+# FORECASTING
 # ======================================================================================
 elif module == "Forecasting":
-
-    st.subheader("📈 Demand Forecasting (Real ML)")
 
     product = st.selectbox("Product", df['Product'].unique())
     region = st.selectbox("Region", df['Region'].unique())
@@ -191,7 +160,6 @@ elif module == "Forecasting":
     future_dates = pd.date_range(start=start_date, end=end_date)
 
     history = df.copy()
-
     preds = []
 
     for d in future_dates:
@@ -211,15 +179,11 @@ elif module == "Forecasting":
             'rolling_std_7': history['Demand'].tail(7).std()
         }
 
-        row_df = pd.DataFrame([row])
-        pred = model.predict(row_df)[0]
-
+        pred = model.predict(pd.DataFrame([row]))[0]
         preds.append(pred)
 
-        # Append for next step
-        new_row = row.copy()
-        new_row['Demand'] = pred
-        history = pd.concat([history, pd.DataFrame([new_row])], ignore_index=True)
+        row['Demand'] = pred
+        history = pd.concat([history, pd.DataFrame([row])], ignore_index=True)
 
     result = pd.DataFrame({
         "Date": future_dates,
@@ -227,16 +191,12 @@ elif module == "Forecasting":
     })
 
     st.dataframe(result)
-
-    fig = px.line(result, x='Date', y='Forecast')
-    st.plotly_chart(fig, use_container_width=True)
+    st.line_chart(result.set_index("Date"))
 
 # ======================================================================================
-# INVENTORY (REAL FORMULA)
+# INVENTORY
 # ======================================================================================
 elif module == "Inventory":
-
-    st.subheader("📦 Inventory Optimization")
 
     demand_std = df['Demand'].std()
     lead_time = 7
@@ -244,63 +204,61 @@ elif module == "Inventory":
     df['Safety_Stock'] = 1.65 * demand_std * np.sqrt(lead_time)
     df['Reorder_Point'] = df['Demand'] * lead_time + df['Safety_Stock']
 
-    st.dataframe(df[['Product','Demand','Safety_Stock','Reorder_Point']].head())
+    st.dataframe(df[['Product','Demand','Safety_Stock','Reorder_Point']])
 
 # ======================================================================================
 # PRODUCTION
 # ======================================================================================
 elif module == "Production":
 
-    st.subheader("🏭 Production Planning")
-
     df['Production'] = df['Demand'] * 1.15
-
-    st.dataframe(df[['Product','Demand','Production']].head())
+    st.dataframe(df[['Product','Demand','Production']])
 
 # ======================================================================================
 # LOGISTICS
 # ======================================================================================
 elif module == "Logistics":
 
-    st.subheader("🚚 Logistics")
-
     df['Cost'] = df['Logistics'] * 1.2
 
-    fig = px.scatter(df, x='Region', y='Cost', size='Demand')
+    fig = px.scatter(df, x='Region', y='Cost',
+                     size='Demand', color='Product')
     st.plotly_chart(fig)
 
 # ======================================================================================
-# DECISION AI (SMART 🔥)
+# DECISION AI (CHATBOT)
 # ======================================================================================
 elif module == "Decision AI":
-
-    st.subheader("🤖 Decision Intelligence Engine")
 
     if "chat" not in st.session_state:
         st.session_state.chat = []
 
-    user = st.text_input("Ask a business question")
+    user = st.text_input("Ask business question")
 
     if user:
 
         q = user.lower()
 
         if "forecast" in q:
-            response = f"Model RMSE is {round(rmse,2)}. Forecast is reliable for short-term planning."
+            response = f"RMSE: {round(rmse,2)}. Forecast is reliable short-term."
 
         elif "inventory" in q:
-            high = df.sort_values('Reorder_Point', ascending=False).iloc[0]
-            response = f"Increase inventory for {high['Product']} (high reorder point)."
+            p = df.sort_values('Reorder_Point', ascending=False).iloc[0]['Product']
+            response = f"Increase stock for {p}"
 
         elif "risk" in q:
             vol = df['Demand'].std()
-            response = f"Demand volatility is {round(vol,2)}. Maintain buffer stock."
+            response = f"Demand volatility: {round(vol,2)}"
 
         elif "production" in q:
-            response = "Production should be increased by ~15% above forecast to avoid shortages."
+            response = "Increase production by 15% buffer"
+
+        elif "logistics" in q:
+            r = df.groupby('Region')['Cost'].mean().idxmax()
+            response = f"High cost region: {r}"
 
         else:
-            response = "Ask about forecast, inventory, production, or risk."
+            response = "Ask about forecast, inventory, logistics, or production"
 
         st.session_state.chat.append(("You", user))
         st.session_state.chat.append(("AI", response))
