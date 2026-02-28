@@ -24,32 +24,90 @@ section[data-testid="stSidebar"] {background:#ffffff;}
 
 st.title("📦 OmniFlow-D2D — Supply Chain Intelligence")
 
-# -----------------------------
-# LOAD DATA (FIXED)
-# -----------------------------
-df = pd.read_csv("OmniFlow_D2D_India_Unified_1000.csv")
+@st.cache_data
+def load_data():
 
-# Rename columns to match your app
-df = df.rename(columns={
-    "Order_Date": "Date",
-    "Product_Name": "Product",
-    "Quantity": "Demand",
-    "Shipping_Cost_INR": "Logistics"
-})
+    df = pd.read_csv("OmniFlow_D2D_India_Unified_1000.csv")
 
-# Convert date
-df['Date'] = pd.to_datetime(df['Date'])
+    # -----------------------------
+    # CLEAN COLUMN NAMES
+    # -----------------------------
+    df.columns = [c.strip() for c in df.columns]
 
-# Sort
-df = df.sort_values("Date")
+    # -----------------------------
+    # CORE REQUIRED COLUMNS (STRICT)
+    # -----------------------------
+    REQUIRED = {
+        "Order_Date": "datetime",
+        "Product_Name": "str",
+        "Quantity": "numeric"
+    }
 
-# -----------------------------
-# FEATURE ENGINEERING
-# -----------------------------
-df['day'] = df['Date'].dt.day
-df['month'] = df['Date'].dt.month
-df['year'] = df['Date'].dt.year
-df['weekday'] = df['Date'].dt.weekday
+    for col in REQUIRED:
+        if col not in df.columns:
+            st.error(f"Missing required column: {col}")
+            st.stop()
+
+    # -----------------------------
+    # DATE PROCESSING
+    # -----------------------------
+    df["Order_Date"] = pd.to_datetime(df["Order_Date"])
+
+    # -----------------------------
+    # FEATURE ENGINEERING (CRITICAL)
+    # -----------------------------
+    df["Month"]       = df["Order_Date"].dt.to_period("M").astype(str)
+    df["Week"]        = df["Order_Date"].dt.to_period("W").astype(str)
+    df["Day_of_Week"] = df["Order_Date"].dt.day_name()
+
+    # -----------------------------
+    # ENSURE ALL FEATURES EXIST
+    # (THIS IS WHY YOUR APP WAS BREAKING)
+    # -----------------------------
+
+    # Revenue
+    if "Revenue_INR" not in df.columns:
+        if "Sell_Price" in df.columns:
+            df["Revenue_INR"] = df["Quantity"] * df["Sell_Price"]
+        else:
+            df["Revenue_INR"] = df["Quantity"] * 100
+
+    # Order Status
+    if "Order_Status" not in df.columns:
+        df["Order_Status"] = "Delivered"
+
+    # Returns
+    if "Return_Flag" not in df.columns:
+        df["Return_Flag"] = 0
+
+    # Delivery Days
+    if "Delivery_Days" not in df.columns:
+        df["Delivery_Days"] = np.random.randint(3, 7, len(df))
+
+    # Shipping Cost
+    if "Shipping_Cost_INR" not in df.columns:
+        df["Shipping_Cost_INR"] = np.random.uniform(50, 120, len(df))
+
+    # Courier
+    if "Courier_Partner" not in df.columns:
+        df["Courier_Partner"] = "Delhivery"
+
+    # Warehouse
+    if "Warehouse" not in df.columns:
+        df["Warehouse"] = "Default WH"
+
+    # Region
+    if "Region" not in df.columns:
+        df["Region"] = "India"
+
+    # Category fallback (important for dashboard)
+    if "Category" not in df.columns:
+        df["Category"] = "General"
+
+    # -----------------------------
+    # FINAL SORT
+    # -----------------------------
+    return df.sort_values("Order_Date").reset_index(drop=True)
 
 # Lag features (IMPORTANT 🔥)
 df['lag_1'] = df['Demand'].shift(1)
