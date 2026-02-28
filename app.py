@@ -144,9 +144,27 @@ def _linear(series, steps=3):
 def run_all_forecasts(df, steps=3):
     active = df[df["Order_Status"].isin(["Delivered","Shipped"])]
     monthly = active.groupby(["Product_Name","Month"])["Quantity"].sum().reset_index()
-    all_months = [str(m) for m in pd.period_range("2024-01","2025-03",freq="M")]
-    last_period = pd.Period("2025-03","M")
-    future_months = [str(last_period + i + 1) for i in range(steps)]
+    # Get real current date
+    today = pd.Timestamp.today()
+    
+    # Last available data month
+    last_data_date = df["Order_Date"].max()
+    last_period = last_data_date.to_period("M")
+    
+    # Generate full history dynamically
+    all_months = [str(m) for m in pd.period_range(
+        df["Order_Date"].min().to_period("M"),
+        last_period,
+        freq="M"
+    )]
+    
+    # Forecast should start from TODAY (not dataset end)
+    current_period = today.to_period("M")
+    
+    # If today is after dataset → use today
+    start_period = max(last_period, current_period)
+    
+    future_months = [str(start_period + i + 1) for i in range(steps)]
     results = {}
     for prod in df["Product_Name"].unique():
         sub = monthly[monthly["Product_Name"]==prod].set_index("Month")["Quantity"]
