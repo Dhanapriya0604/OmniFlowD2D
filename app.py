@@ -27,7 +27,7 @@ st.title("📦 OmniFlow-D2D — Supply Chain Intelligence")
 # -----------------------------
 # LOAD DATA
 # -----------------------------
-df = pd.read_csv("/mnt/data/OmniFlow_D2D_India_Unified_1000 (1).csv")
+df = pd.read_csv("/mnt/data/OmniFlow_D2D_India_Unified_1000.csv")
 df['Date'] = pd.to_datetime(df['Date'])
 df = df.sort_values('Date')
 
