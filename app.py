@@ -266,9 +266,15 @@ def load_dataset():
     statuses = ["Delivered", "Shipped", "Returned", "Cancelled"]
     couriers = ["BlueDart", "Delhivery", "Ecom Express", "XpressBees", "DTDC"]
 
-    prod_arr = np.random.choice(products, n, p=[0.12,0.10,0.09,0.07,0.06,0.08,0.07,0.06,0.06,0.05,0.05,0.03,0.03,0.03,0.04,0.03,0.03,0.02,0.03,0.04])
-    region_arr = np.random.choice(regions, n, p=[0.18,0.15,0.14,0.10,0.08,0.09,0.07,0.05,0.08,0.06])
-    status_arr = np.random.choice(statuses, n, p=[0.72,0.14,0.08,0.06])
+    _prod_p = np.array([0.12,0.10,0.09,0.07,0.06,0.08,0.07,0.06,0.06,0.05,0.05,0.03,0.03,0.03,0.04,0.03,0.03,0.02,0.03,0.04])
+    _prod_p = _prod_p / _prod_p.sum()
+    _region_p = np.array([0.18,0.15,0.14,0.10,0.08,0.09,0.07,0.05,0.08,0.06])
+    _region_p = _region_p / _region_p.sum()
+    _status_p = np.array([0.72,0.14,0.08,0.06])
+    _status_p = _status_p / _status_p.sum()
+    prod_arr = np.random.choice(products, n, p=_prod_p)
+    region_arr = np.random.choice(regions, n, p=_region_p)
+    status_arr = np.random.choice(statuses, n, p=_status_p)
     courier_arr = np.random.choice(couriers, n)
 
     # Price map
