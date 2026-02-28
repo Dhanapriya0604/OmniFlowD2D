@@ -141,30 +141,18 @@ def _linear(series, steps=3):
     return fc, (fc-std).clip(0), (fc+std).clip(0)
 
 @st.cache_data
-def run_all_forecasts(df, steps=3):
+def run_all_forecasts(df):
+    """
+    Forecast from Apr 2025 → Dec 2026 = 21 months ahead.
+    History: Jan 2024 – Mar 2025 (15 months).
+    Model: SARIMAX(1,1,1)(1,0,1,12) with linear-trend fallback.
+    """
+    STEPS = 21  # Apr-2025 → Dec-2026
     active = df[df["Order_Status"].isin(["Delivered","Shipped"])]
     monthly = active.groupby(["Product_Name","Month"])["Quantity"].sum().reset_index()
-    # Get real current date
-    today = pd.Timestamp.today()
-    
-    # Last available data month
-    last_data_date = df["Order_Date"].max()
-    last_period = last_data_date.to_period("M")
-    
-    # Generate full history dynamically
-    all_months = [str(m) for m in pd.period_range(
-        df["Order_Date"].min().to_period("M"),
-        last_period,
-        freq="M"
-    )]
-    
-    # Forecast should start from TODAY (not dataset end)
-    current_period = today.to_period("M")
-    
-    # If today is after dataset → use today
-    start_period = max(last_period, current_period)
-    
-    future_months = [str(start_period + i + 1) for i in range(steps)]
+    all_months = [str(m) for m in pd.period_range("2024-01","2025-03",freq="M")]
+    last_period = pd.Period("2025-03","M")
+    future_months = [str(last_period + i + 1) for i in range(STEPS)]  # Apr-2025 … Dec-2026
     results = {}
     for prod in df["Product_Name"].unique():
         sub = monthly[monthly["Product_Name"]==prod].set_index("Month")["Quantity"]
@@ -172,11 +160,12 @@ def run_all_forecasts(df, steps=3):
         if sub.sum() == 0:
             continue
         try:
-            fc, lo, hi = _sarimax(sub, steps)
+            fc, lo, hi = _sarimax(sub, STEPS)
             method = "SARIMAX"
         except Exception:
-            fc, lo, hi = _linear(sub, steps)
+            fc, lo, hi = _linear(sub, STEPS)
             method = "Linear Trend"
+        # Hold-out RMSE on last 3 months of history
         rmse, nrmse = 0.0, 0.0
         if len(sub) >= 6:
             try:
@@ -190,10 +179,10 @@ def run_all_forecasts(df, steps=3):
         results[prod] = {
             "history": sub, "history_x": all_months,
             "forecast": fc, "lo": lo, "hi": hi,
-            "future_months": future_months,
+            "future_months": future_months,          # 21 labels
             "rmse": round(rmse,2), "nrmse": round(nrmse,4),
             "method": method, "avg_monthly": avg,
-            "trend": "↑ Rising" if (fc[0] > sub.iloc[-3:].mean()) else "↓ Falling"
+            "trend": "↑ Rising" if float(fc[-1]) > float(fc[0]) else "↓ Falling"
         }
     return results
 
@@ -287,65 +276,180 @@ def page_overview(df):
 # PAGE 2 — DEMAND FORECASTING
 # ══════════════════════════════════════════════════════
 def page_forecasting(df):
-    st.markdown("<div class='ph'><h1>📈 Demand Forecasting</h1><p>SARIMAX models on 15 months of history · Predicts Apr–Jun 2025 demand for all 50 SKUs</p></div>", unsafe_allow_html=True)
-    with st.spinner("⚙️ Fitting SARIMAX models for all 50 SKUs..."):
+    st.markdown(
+        "<div class='ph'><h1>📈 Demand Forecasting</h1>"
+        "<p>SARIMAX time-series · History: Jan 2024 – Mar 2025 · "
+        "Forecast horizon: Apr 2025 → Dec 2026 (21 months)</p></div>",
+        unsafe_allow_html=True)
+
+    with st.spinner("⚙️ Fitting SARIMAX models for all 50 SKUs — forecasting through Dec 2026..."):
         fcs = run_all_forecasts(df)
 
+    # ── Controls row ──────────────────────────────────────────────────
+    all_future = list(fcs.values())[0]["future_months"]   # 21 labels
+    # Group into named horizons
+    HORIZONS = {
+        "Q2 2025 (Apr–Jun)"        : 3,
+        "H2 2025 (Apr–Sep)"        : 6,
+        "Full 2025 tail (Apr–Dec)" : 9,
+        "Q1 2026 (Jan–Mar)"        : 12,
+        "H1 2026 (Jan–Jun)"        : 15,
+        "Full Year 2026 (Jan–Dec)" : 21,
+        "Custom"                   : None,
+    }
     products = sorted(fcs.keys())
-    col1,col2 = st.columns([1,3])
-    with col1:
+    ctrl1, ctrl2, ctrl3 = st.columns([2, 2, 2])
+    with ctrl1:
         sel = st.selectbox("🔍 Select SKU", products)
-        r = fcs[sel]
-        st.markdown("---")
-        st.metric("Model",       r["method"])
-        st.metric("RMSE",        f"{r['rmse']:.2f}")
-        st.metric("NRMSE",       f"{r['nrmse']:.4f}")
-        st.metric("Avg Demand",  f"{r['avg_monthly']:.1f} u/mo")
-        st.metric("Trend",       r["trend"])
-        st.markdown("**Forecast (units)**")
-        for lbl, val in zip(r["future_months"], r["forecast"]):
-            st.metric(lbl, f"{int(max(0,val))} units")
+    with ctrl2:
+        horizon_label = st.selectbox("📅 Forecast Horizon", list(HORIZONS.keys()), index=5)
+    with ctrl3:
+        if HORIZONS[horizon_label] is None:
+            steps = st.slider("Months to forecast", 1, 21, 12)
+        else:
+            steps = HORIZONS[horizon_label]
+            st.metric("Months Ahead", f"{steps} months")
 
-    with col2:
-        hx, hy = r["history_x"], r["history"].values
-        fx, fy = r["future_months"], [max(0,v) for v in r["forecast"]]
-        lo_y   = [max(0,v) for v in r["lo"]]
-        hi_y   = [max(0,v) for v in r["hi"]]
-        bx = [hx[-1]] + fx
-        by = [float(hy[-1])] + fy
-        blo= [float(hy[-1])] + lo_y
-        bhi= [float(hy[-1])] + hi_y
+    r = fcs[sel]
+    fc_months = r["future_months"][:steps]
+    fc_vals   = [max(0, float(v)) for v in r["forecast"][:steps]]
+    lo_vals   = [max(0, float(v)) for v in r["lo"][:steps]]
+    hi_vals   = [max(0, float(v)) for v in r["hi"][:steps]]
 
-        fig = go.Figure()
-        fig.add_trace(go.Scatter(x=hx,y=hy,name="Historical",line=dict(color="#00d4ff",width=2.5),mode="lines+markers",marker=dict(size=5)))
-        fig.add_trace(go.Scatter(x=bx+bx[::-1],y=bhi+blo[::-1],fill="toself",fillcolor="rgba(124,58,237,0.15)",
-                                  line=dict(color="rgba(0,0,0,0)"),name="80% CI"))
-        fig.add_trace(go.Scatter(x=bx,y=by,name="Forecast",line=dict(color="#7c3aed",width=2.5,dash="dash"),
-                                  mode="lines+markers",marker=dict(size=9,symbol="diamond",color="#7c3aed")))
-        for ann in ["2024-10","2024-11"]:
-            if ann in hx:
-                fig.add_vline(x=hx.index(ann),line=dict(color="#f59e0b",dash="dot",width=1),
-                              annotation_text="Festive",annotation_font_color="#f59e0b",annotation_position="top")
-        fmt(fig,f"Monthly Demand Forecast — {sel}"); fig.update_xaxes(tickangle=-45)
-        st.plotly_chart(fig,use_container_width=True)
+    st.markdown("---")
 
-    st.markdown("### 📋 All SKUs Forecast Summary")
+    # ── KPI strip ────────────────────────────────────────────────────
+    k1,k2,k3,k4,k5,k6 = st.columns(6)
+    k1.metric("Model",          r["method"])
+    k2.metric("RMSE",           f"{r['rmse']:.2f}")
+    k3.metric("NRMSE",          f"{r['nrmse']:.4f}")
+    k4.metric("Avg Hist Demand",f"{r['avg_monthly']:.1f} u/mo")
+    k5.metric("Peak Forecast",  f"{int(max(fc_vals))} units")
+    k6.metric("Trend (full)",   r["trend"])
+
+    # ── Main forecast chart ──────────────────────────────────────────
+    hx = r["history_x"]
+    hy = r["history"].values
+    bx  = [hx[-1]] + fc_months
+    by  = [float(hy[-1])] + fc_vals
+    blo = [float(hy[-1])] + lo_vals
+    bhi = [float(hy[-1])] + hi_vals
+
+    fig = go.Figure()
+    # Historical
+    fig.add_trace(go.Scatter(
+        x=hx, y=hy, name="Historical Demand",
+        line=dict(color="#00d4ff", width=2.5),
+        mode="lines+markers", marker=dict(size=5, color="#00d4ff")))
+    # Confidence band
+    fig.add_trace(go.Scatter(
+        x=bx + bx[::-1], y=bhi + blo[::-1],
+        fill="toself", fillcolor="rgba(124,58,237,0.12)",
+        line=dict(color="rgba(0,0,0,0)"), name="80% Confidence Band", showlegend=True))
+    # Forecast line
+    fig.add_trace(go.Scatter(
+        x=bx, y=by, name="Forecast",
+        line=dict(color="#7c3aed", width=2.5, dash="dash"),
+        mode="lines+markers",
+        marker=dict(size=7, symbol="diamond", color="#7c3aed")))
+    # Festive markers
+    for ann in ["2024-10","2024-11"]:
+        if ann in hx:
+            fig.add_vline(x=hx.index(ann), line=dict(color="#f59e0b",dash="dot",width=1),
+                          annotation_text="Festive 🪔", annotation_font_color="#f59e0b",
+                          annotation_position="top left")
+    # Year boundary markers on forecast
+    for yr_sep in ["2026-01"]:
+        if yr_sep in fc_months:
+            fig.add_vline(x=len(hx)+fc_months.index(yr_sep),
+                          line=dict(color="#10b981",dash="dash",width=1.5),
+                          annotation_text="2026 →", annotation_font_color="#10b981",
+                          annotation_position="top right")
+    fmt(fig, f"Demand Forecast — {sel}  [{fc_months[0]} → {fc_months[-1]}]")
+    fig.update_xaxes(tickangle=-45)
+    st.plotly_chart(fig, use_container_width=True)
+
+    # ── Monthly table for selected SKU ───────────────────────────────
+    st.markdown("#### 📅 Month-by-Month Forecast Table")
+    tbl = pd.DataFrame({
+        "Month":          fc_months,
+        "Forecast (units)": [int(v) for v in fc_vals],
+        "Lower CI":       [int(v) for v in lo_vals],
+        "Upper CI":       [int(v) for v in hi_vals],
+        "Year":           [m[:4] for m in fc_months],
+        "Quarter":        ["Q"+str((int(m[5:7])-1)//3+1) for m in fc_months],
+    })
+    st.dataframe(tbl, use_container_width=True, hide_index=True)
+
+    # ── Quarterly aggregation chart ───────────────────────────────────
+    qdf = tbl.groupby(["Year","Quarter"])["Forecast (units)"].sum().reset_index()
+    qdf["YQ"] = qdf["Year"] + " " + qdf["Quarter"]
+    fig_q = px.bar(qdf, x="YQ", y="Forecast (units)", color="Year",
+                   color_discrete_map={"2025":"#00d4ff","2026":"#7c3aed"},
+                   text="Forecast (units)")
+    fig_q.update_traces(textposition="outside", textfont_size=10)
+    fmt(fig_q, f"Quarterly Demand Forecast — {sel}")
+    st.plotly_chart(fig_q, use_container_width=True)
+
+    st.markdown("---")
+
+    # ── All-SKUs summary table ────────────────────────────────────────
+    st.markdown("### 📋 All 50 SKUs — Forecast Summary (Full 21-Month Horizon)")
+
+    # Build period columns: show monthly for 2025-tail, quarterly for 2026
+    period_cols = {}
+    # 2025 months (Apr-Dec = indices 0-8)
+    for i, m in enumerate(all_future[:9]):
+        period_cols[f"{m}"] = i
+    # 2026 quarters (indices 9-20)
+    q_map = {"2026-Q1":(9,12),"2026-Q2":(12,15),"2026-Q3":(15,18),"2026-Q4":(18,21)}
+
     rows = []
-    for p,r in fcs.items():
-        fv=[max(0,int(v)) for v in r["forecast"]]
-        cat=df[df["Product_Name"]==p]["Category"].iloc[0]
-        rows.append({"Product":p,"Category":cat,"Model":r["method"],"Avg Monthly":round(r["avg_monthly"],1),
-                     "RMSE":r["rmse"],"NRMSE":r["nrmse"],"Trend":r["trend"],
-                     f"Fcst {r['future_months'][0]}":fv[0] if len(fv)>0 else 0,
-                     f"Fcst {r['future_months'][1]}":fv[1] if len(fv)>1 else 0,
-                     f"Fcst {r['future_months'][2]}":fv[2] if len(fv)>2 else 0})
-    sdf = pd.DataFrame(rows).sort_values("Avg Monthly",ascending=False)
-    st.dataframe(sdf,use_container_width=True,hide_index=True)
+    for p, r in fcs.items():
+        fv  = [max(0, int(v)) for v in r["forecast"]]
+        cat = df[df["Product_Name"]==p]["Category"].iloc[0]
+        row = {
+            "Product":p, "Category":cat, "Model":r["method"],
+            "Hist Avg/mo":round(r["avg_monthly"],1),
+            "RMSE":r["rmse"], "Trend":r["trend"],
+            # 2025 quarterly
+            "2025-Q2(Apr-Jun)": sum(fv[0:3]),
+            "2025-Q3(Jul-Sep)": sum(fv[3:6]),
+            "2025-Q4(Oct-Dec)": sum(fv[6:9]),
+            # 2026 quarterly
+            "2026-Q1(Jan-Mar)": sum(fv[9:12])  if len(fv)>=12 else 0,
+            "2026-Q2(Apr-Jun)": sum(fv[12:15]) if len(fv)>=15 else 0,
+            "2026-Q3(Jul-Sep)": sum(fv[15:18]) if len(fv)>=18 else 0,
+            "2026-Q4(Oct-Dec)": sum(fv[18:21]) if len(fv)>=21 else 0,
+            # Annual totals
+            "2025-Total":       sum(fv[0:9]),
+            "2026-Total":       sum(fv[9:21]) if len(fv)>=21 else sum(fv[9:]),
+        }
+        rows.append(row)
+    sdf = pd.DataFrame(rows).sort_values("Hist Avg/mo", ascending=False)
+    st.dataframe(sdf, use_container_width=True, hide_index=True)
 
-    fig2 = px.bar(sdf.sort_values("RMSE",ascending=False).head(20),x="Product",y="RMSE",color="NRMSE",
-                  color_continuous_scale=["#10b981","#f59e0b","#ef4444"])
-    fig2.update_xaxes(tickangle=-45); fmt(fig2,"Top 20 SKUs — Forecast RMSE")
-    st.plotly_chart(fig2,use_container_width=True)
+    # ── Top 10 SKUs heatmap 2025 vs 2026 ─────────────────────────────
+    top10_names = sdf.head(10)["Product"].tolist()
+    cmp_rows = []
+    for p in top10_names:
+        r = fcs[p]; fv=[max(0,int(v)) for v in r["forecast"]]
+        cmp_rows.append({"Product":p,"2025 (Apr-Dec)":sum(fv[0:9]),"2026 (Full Year)":sum(fv[9:21]) if len(fv)>=21 else sum(fv[9:])})
+    cdf = pd.DataFrame(cmp_rows)
+    fig_cmp = go.Figure()
+    fig_cmp.add_trace(go.Bar(x=cdf["Product"],y=cdf["2025 (Apr-Dec)"],name="2025 (Apr-Dec)",marker_color="#00d4ff",opacity=0.85))
+    fig_cmp.add_trace(go.Bar(x=cdf["Product"],y=cdf["2026 (Full Year)"],name="2026 (Full Year)",marker_color="#7c3aed",opacity=0.85))
+    fig_cmp.update_layout(barmode="group"); fig_cmp.update_xaxes(tickangle=-35)
+    fmt(fig_cmp,"2025 vs 2026 Forecast — Top 10 SKUs by Demand")
+    st.plotly_chart(fig_cmp, use_container_width=True)
+
+    # ── RMSE chart ───────────────────────────────────────────────────
+    fig_rmse = px.bar(sdf.sort_values("RMSE",ascending=False).head(20),
+                      x="Product", y="RMSE", color="RMSE",
+                      color_continuous_scale=["#10b981","#f59e0b","#ef4444"])
+    fig_rmse.update_xaxes(tickangle=-45)
+    fmt(fig_rmse,"Top 20 SKUs — Forecast RMSE (lower = better accuracy)")
+    st.plotly_chart(fig_rmse, use_container_width=True)
 
 # ══════════════════════════════════════════════════════
 # PAGE 3 — INVENTORY
@@ -395,14 +499,15 @@ def page_inventory(df):
 # PAGE 4 — PRODUCTION
 # ══════════════════════════════════════════════════════
 def page_production(df):
-    st.markdown("<div class='ph'><h1>⚙️ Production Planning</h1><p>Capacity planning from SARIMAX forecasts + safety stock buffer — Apr to Jun 2025</p></div>", unsafe_allow_html=True)
+    st.markdown("<div class='ph'><h1>⚙️ Production Planning</h1><p>Capacity planning from SARIMAX forecasts + safety stock buffer — Apr 2025 → Dec 2026</p></div>", unsafe_allow_html=True)
     with st.spinner("Building production plan..."):
         fcs=run_all_forecasts(df); inv=compute_inventory(df,fcs)
 
     c1,c2,c3 = st.columns(3)
     capacity   = c1.slider("Monthly Capacity per SKU (units)", 50, 2000, 500, 50)
     buffer_pct = c2.slider("Production Buffer %", 5, 30, 15)
-    horizon    = c3.selectbox("Planning Horizon (months)", [1,2,3], index=2)
+    horizon    = c3.selectbox("Planning Horizon (months)", [3,6,9,12,18,21],
+                               index=5, format_func=lambda x: f"{x} months ({'through Dec 2026' if x==21 else 'through '+['','','','Jun 2025','Sep 2025','Dec 2025','','','','','','','Mar 2026','','','Jun 2026','','','Sep 2026','','Dec 2026'][x-1]})")
 
     records = []
     for prod, r in fcs.items():
@@ -507,11 +612,16 @@ def _chat(msg, ctx):
     fcs, inv, df = ctx["fcs"], ctx["inv"], ctx["df"]
 
     if any(k in msg_l for k in ["highest demand","top demand","demand next","forecast next","most demand"]):
-        p=ctx["top_forecast_prod"]; v=ctx["top_forecast_val"]
+        p=ctx["top_forecast_prod"]
         cat=df[df["Product_Name"]==p]["Category"].iloc[0]
         mns=fcs[p]["future_months"]; fv=[max(0,int(x)) for x in fcs[p]["forecast"]]
-        return (f"📈 **Highest Forecasted Demand**\n\n**{p}** ({cat})\n"
+        total_2025=sum(fv[0:9]); total_2026=sum(fv[9:21]) if len(fv)>=21 else sum(fv[9:])
+        return (f"📈 **Highest Forecasted Demand (Apr 2025 → Dec 2026)**\n\n**{p}** ({cat})\n\n"
+                f"**2025 Monthly Preview:**\n"
                 f"• {mns[0]}: **{fv[0]} units**\n• {mns[1]}: {fv[1]} units\n• {mns[2]}: {fv[2]} units\n\n"
+                f"**Annual Totals:**\n"
+                f"• 2025 (Apr–Dec): **{total_2025} units**\n"
+                f"• 2026 (Full Year): **{total_2026} units**\n\n"
                 f"Model: {fcs[p]['method']} | RMSE: {fcs[p]['rmse']} | Trend: {fcs[p]['trend']}")
 
     for prod in sorted(fcs.keys(), key=len, reverse=True):
@@ -527,14 +637,27 @@ def _chat(msg, ctx):
                             f"• EOQ: **{row['EOQ']} units**\n"
                             f"• Stock Needed M+1: {row['Stock Needed (M+1)']} units\n"
                             f"• Unit Price: ₹{row['Unit Price (₹)']} | Lead Time: {row['Lead Time (days)']} days")
-            return (f"📈 **Forecast — {prod}**\n\n"
-                    f"• {mns[0]}: **{fv[0]} units**\n• {mns[1]}: {fv[1]} units\n• {mns[2]}: {fv[2]} units\n\n"
-                    f"Model: {r['method']} | Avg: {r['avg_monthly']:.1f} u/mo | Trend: {r['trend']} | RMSE: {r['rmse']}")
+            total_2025=sum(fv[0:9]); total_2026=sum(fv[9:21]) if len(fv)>=21 else sum(fv[9:])
+            return (f"📈 **Forecast — {prod}** (Apr 2025 → Dec 2026)\n\n"
+                    f"**Near-term (2025):**\n"
+                    f"• {mns[0]}: **{fv[0]} units**\n"
+                    f"• {mns[1] if len(mns)>1 else 'May-2025'}: {fv[1] if len(fv)>1 else 0} units\n"
+                    f"• {mns[2] if len(mns)>2 else 'Jun-2025'}: {fv[2] if len(fv)>2 else 0} units\n\n"
+                    f"**Annual Totals:**\n"
+                    f"• 2025 (Apr–Dec): **{total_2025} units**\n"
+                    f"• 2026 (Full Year): **{total_2026} units**\n\n"
+                    f"Model: {r['method']} | Avg Hist: {r['avg_monthly']:.1f} u/mo | Trend: {r['trend']} | RMSE: {r['rmse']}")
+
+    if "2026" in msg_l:
+        top5=sorted(fcs.items(),key=lambda x:sum([max(0,int(v)) for v in x[1]["forecast"][9:21]]),reverse=True)[:5]
+        lines="\n".join([f"• {p}: {sum([max(0,int(v)) for v in r['forecast'][9:21]])} units total 2026 ({r['trend']})" for p,r in top5])
+        return f"📈 **Top 5 SKUs — Full Year 2026 Forecast**\n\n{lines}"
 
     if "forecast" in msg_l or "predict" in msg_l:
         top5=sorted(fcs.items(),key=lambda x:x[1]["forecast"][0] if len(x[1]["forecast"])>0 else 0,reverse=True)[:5]
-        lines="\n".join([f"• {p}: {max(0,int(r['forecast'][0]))} units ({r['trend']})" for p,r in top5])
-        return f"📈 **Top 5 SKUs — Next Month Forecast ({list(fcs.values())[0]['future_months'][0]})**\n\n{lines}"
+        first_month = list(fcs.values())[0]["future_months"][0]
+        lines="\n".join([f"• {p}: {max(0,int(r['forecast'][0]))} units in {first_month} ({r['trend']})" for p,r in top5])
+        return f"📈 **Top 5 SKUs — Next Month ({first_month}) Forecast**\n\n{lines}\n\nTip: Ask '2026 forecast' for annual totals!"
 
     if "reorder" in msg_l:
         top=inv.sort_values("Reorder Point",ascending=False).head(5)
@@ -581,18 +704,30 @@ def _chat(msg, ctx):
         return f"📂 **Category-wise Revenue**\n\n{lines}"
 
     if any(k in msg_l for k in ["kpi","summary","overview","dashboard","snapshot"]):
+        top_p = ctx["top_forecast_prod"]
+        top_fv = [max(0,int(v)) for v in fcs[top_p]["forecast"]]
+        total_2026 = sum(top_fv[9:21]) if len(top_fv)>=21 else sum(top_fv[9:])
         return (f"📊 **OmniFlow-D2D KPI Snapshot**\n\n"
                 f"💰 Revenue: ₹{ctx['total_revenue']/1e6:.2f}M\n📦 Orders: {ctx['total_orders']:,}\n"
-                f"🏆 Top SKU: {ctx['top_rev_product']}\n📈 Highest Forecast M+1: {ctx['top_forecast_prod']} ({ctx['top_forecast_val']} units)\n"
-                f"🗺️ Top Region: {ctx['top_region']}\n🚚 Avg Delivery: {ctx['avg_delivery']:.1f} days\n↩️ Return Rate: {ctx['return_rate']:.1f}%")
+                f"🏆 Top SKU: {ctx['top_rev_product']}\n"
+                f"📈 Top Forecast SKU: {top_p}\n"
+                f"   → Apr 2025: {top_fv[0]} units\n"
+                f"   → 2026 Annual: {total_2026} units\n"
+                f"🗺️ Top Region: {ctx['top_region']}\n🚚 Avg Delivery: {ctx['avg_delivery']:.1f} days\n↩️ Return Rate: {ctx['return_rate']:.1f}%\n\n"
+                f"📅 Forecast Horizon: Apr 2025 → Dec 2026 (21 months)")
 
     if any(k in msg_l for k in ["hi","hello","hey","help","what can","commands"]):
-        return ("👋 **OmniFlow-D2D AI Assistant**\n\nAsk me about:\n\n"
-                "📈 'Forecast for boAt Airdopes 141 TWS'\n📈 'Which SKU has highest demand next month?'\n"
-                "📦 'Reorder point for Himalaya Face Wash'\n📦 'Top 5 safety stock'\n"
-                "🚚 'Which region needs logistics support?'\n🚚 'Best courier performance'\n"
-                "💰 'Top products by revenue'\n💰 'KPI summary'\n\n"
-                "Works for all 50 SKUs!")
+        return ("👋 **OmniFlow-D2D AI Assistant**\n\nForecast coverage: **Apr 2025 → Dec 2026** (21 months)\n\n"
+                "📈 'Forecast for boAt Airdopes 141 TWS'\n"
+                "📈 'Which SKU has highest demand next month?'\n"
+                "📈 '2026 forecast top products'\n"
+                "📦 'Reorder point for Himalaya Face Wash'\n"
+                "📦 'EOQ for Dove Soap'\n"
+                "🚚 'Which region needs more logistics support?'\n"
+                "🚚 'Best courier performance'\n"
+                "💰 'Top 5 products by revenue'\n"
+                "💰 'KPI summary'\n\n"
+                "Works for all 50 SKUs through Dec 2026!")
 
     sample=", ".join(list(fcs.keys())[:3])
     return (f"🤖 Couldn't match: **\"{msg}\"**\n\nTry:\n• 'Forecast for [product]'\n• 'Reorder point for [product]'\n"
@@ -665,7 +800,7 @@ def main():
         <div style='color:#64748b;margin-top:.4rem;'>SKUs</div><div style='color:#7c3aed;font-size:.9rem;'>{df["SKU_ID"].nunique()} Products</div>
         <div style='color:#64748b;margin-top:.4rem;'>CATEGORIES</div><div style='color:#94a3b8;font-size:.75rem;'>Electronics · Home · Fashion · Health</div>
         <div style='color:#64748b;margin-top:.4rem;'>DATE RANGE</div><div style='color:#94a3b8;font-size:.7rem;'>Jan 2024 → Mar 2025</div>
-        <div style='color:#64748b;margin-top:.4rem;'>FORECAST HORIZON</div><div style='color:#10b981;font-size:.7rem;'>Apr → Jun 2025</div>
+        <div style='color:#64748b;margin-top:.4rem;'>FORECAST HORIZON</div><div style='color:#10b981;font-size:.7rem;'>Apr 2025 → Dec 2026</div>
         <div style='color:#64748b;margin-top:.4rem;'>SOURCES</div><div style='color:#94a3b8;font-size:.65rem;'>Amazon India 2025<br>Shiprocket / INCREFF</div>
         </div>""",unsafe_allow_html=True)
 
@@ -679,4 +814,3 @@ def main():
 
 if __name__=="__main__":
     main()
-
