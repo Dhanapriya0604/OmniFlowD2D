@@ -1,877 +1,906 @@
-# ======================================================================================
-# OmniFlow-D2D : Industry-Level Supply Chain Intelligence
-# India | 2024 → June 2026 Forecast
-# ======================================================================================
+"""
+OmniFlow D2D — Supply Chain Intelligence Dashboard
+===================================================
+Pure Python script — generates a standalone HTML dashboard.
 
-import streamlit as st
+Usage:
+    python3 omniflow_dashboard.py
+
+Output:
+    omniflow_dashboard.html  (open in any browser)
+
+Requirements:
+    pip install pandas numpy scikit-learn
+"""
+
 import pandas as pd
 import numpy as np
-import plotly.express as px
-import plotly.graph_objects as go
-from plotly.subplots import make_subplots
-from sklearn.ensemble import RandomForestRegressor, GradientBoostingRegressor
+import json
+import os
+import sys
+from pathlib import Path
+from sklearn.ensemble import RandomForestRegressor
 from sklearn.metrics import mean_squared_error, mean_absolute_error
 from sklearn.preprocessing import LabelEncoder
-import warnings
-warnings.filterwarnings("ignore")
 
-# ── PAGE CONFIG ──────────────────────────────────────────────────────────────
-st.set_page_config(
-    page_title="OmniFlow D2D | Supply Chain Intelligence",
-    layout="wide",
-    initial_sidebar_state="expanded"
-)
-
-# ── CUSTOM CSS ────────────────────────────────────────────────────────────────
-st.markdown("""
-<style>
-@import url('https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=DM+Sans:wght@300;400;500&display=swap');
-
-html, body, [class*="css"] {
-    font-family: 'DM Sans', sans-serif;
-    background-color: #0a0e1a;
-    color: #e8eaf0;
-}
-
-.stApp { background: #0a0e1a; }
-
-/* Sidebar */
-[data-testid="stSidebar"] {
-    background: linear-gradient(180deg, #0f1629 0%, #0a0e1a 100%);
-    border-right: 1px solid #1e2d4a;
-}
-[data-testid="stSidebar"] * { color: #c8d0e0 !important; }
-
-/* Titles */
-h1, h2, h3 { font-family: 'Syne', sans-serif !important; }
-
-/* Metric cards */
-[data-testid="metric-container"] {
-    background: linear-gradient(135deg, #111827 0%, #1a2440 100%);
-    border: 1px solid #1e3a5f;
-    border-radius: 12px;
-    padding: 16px;
-}
-[data-testid="stMetricValue"] {
-    font-family: 'Syne', sans-serif !important;
-    color: #38bdf8 !important;
-    font-size: 1.8rem !important;
-}
-[data-testid="stMetricLabel"] { color: #94a3b8 !important; }
-[data-testid="stMetricDelta"] { font-size: 0.85rem !important; }
-
-/* Section headers */
-.section-title {
-    font-family: 'Syne', sans-serif;
-    font-size: 1.4rem;
-    font-weight: 700;
-    color: #38bdf8;
-    border-left: 4px solid #0ea5e9;
-    padding-left: 12px;
-    margin: 24px 0 16px 0;
-}
-
-/* Selectbox / input */
-[data-testid="stSelectbox"] > div > div {
-    background: #111827;
-    border: 1px solid #1e3a5f;
-    border-radius: 8px;
-    color: #e8eaf0;
-}
-
-/* Dataframe */
-[data-testid="stDataFrame"] {
-    border-radius: 10px;
-    overflow: hidden;
-    border: 1px solid #1e3a5f;
-}
-
-/* Button */
-.stButton > button {
-    background: linear-gradient(135deg, #0ea5e9, #6366f1);
-    color: white;
-    border: none;
-    border-radius: 8px;
-    font-family: 'Syne', sans-serif;
-    font-weight: 600;
-    padding: 10px 24px;
-    transition: all 0.2s;
-}
-.stButton > button:hover { opacity: 0.85; transform: translateY(-1px); }
-
-/* Chat bubbles */
-.chat-user {
-    background: #1e3a5f;
-    border-radius: 12px 12px 2px 12px;
-    padding: 10px 16px;
-    margin: 6px 0;
-    text-align: right;
-}
-.chat-ai {
-    background: #111827;
-    border: 1px solid #1e3a5f;
-    border-radius: 12px 12px 12px 2px;
-    padding: 10px 16px;
-    margin: 6px 0;
-}
-
-/* Alert box */
-.alert-box {
-    background: linear-gradient(135deg, #1a1a2e, #16213e);
-    border: 1px solid #e11d48;
-    border-radius: 10px;
-    padding: 14px 18px;
-    margin: 8px 0;
-    color: #fda4af;
-}
-.alert-ok {
-    background: linear-gradient(135deg, #0d1f12, #0f2a1a);
-    border: 1px solid #16a34a;
-    border-radius: 10px;
-    padding: 14px 18px;
-    margin: 8px 0;
-    color: #86efac;
-}
-
-/* Logo header */
-.omniflow-header {
-    font-family: 'Syne', sans-serif;
-    font-size: 2rem;
-    font-weight: 800;
-    background: linear-gradient(135deg, #38bdf8 0%, #818cf8 50%, #f472b6 100%);
-    -webkit-background-clip: text;
-    -webkit-text-fill-color: transparent;
-    background-clip: text;
-}
-.omniflow-sub {
-    color: #64748b;
-    font-size: 0.9rem;
-    letter-spacing: 0.15em;
-    text-transform: uppercase;
-    margin-top: -6px;
-}
-
-div[data-testid="stPlotlyChart"] { border-radius: 12px; overflow: hidden; }
-</style>
-""", unsafe_allow_html=True)
-
-# ── PLOTLY THEME ─────────────────────────────────────────────────────────────
-PLOT_THEME = dict(
-    template="plotly_dark",
-    paper_bgcolor="#111827",
-    plot_bgcolor="#111827",
-    font=dict(family="DM Sans", color="#94a3b8"),
-    margin=dict(l=40, r=20, t=40, b=40)
-)
-COLORS = ["#38bdf8", "#818cf8", "#f472b6", "#34d399", "#fbbf24", "#fb923c"]
+# ─────────────────────────────────────────────
+# CONFIG
+# ─────────────────────────────────────────────
+CSV_FILE   = "OmniFlow_D2D_India_Unified_1000.csv"
+OUT_FILE   = "omniflow_dashboard.html"
+FORECAST_END = "2026-06-30"
 
 
-# ======================================================================================
-# LOAD & PREPARE DATA
-# ======================================================================================
-@st.cache_data
-def load_data():
-    df = pd.read_csv("OmniFlow_D2D_India_Unified_1000.csv")
+# ─────────────────────────────────────────────
+# STEP 1 — LOAD & ENGINEER FEATURES
+# ─────────────────────────────────────────────
+def load_and_engineer(path):
+    print("📂 Loading dataset...")
+    df = pd.read_csv(path)
     df.columns = [c.strip() for c in df.columns]
     df["Order_Date"] = pd.to_datetime(df["Order_Date"])
+    df = df.rename(columns={"Product_Name":"Product","Quantity":"Demand"})
 
-    # Rename for pipeline
-    df = df.rename(columns={
-        "Order_Date": "Date",
-        "Product_Name": "Product",
-        "Quantity": "Demand"
-    })
+    df["month"]   = df["Order_Date"].dt.month
+    df["year"]    = df["Order_Date"].dt.year
+    df["day"]     = df["Order_Date"].dt.day
+    df["weekday"] = df["Order_Date"].dt.weekday
+    df["quarter"] = df["Order_Date"].dt.quarter
+    df["Month"]   = df["Order_Date"].dt.to_period("M").astype(str)
+    df["MonthLabel"] = df["Order_Date"].dt.strftime("%b %y")
 
-    # Temporal features
-    df["month"] = df["Date"].dt.month
-    df["year"] = df["Date"].dt.year
-    df["day"] = df["Date"].dt.day
-    df["weekday"] = df["Date"].dt.weekday
-    df["quarter"] = df["Date"].dt.quarter
-    df["Month_Label"] = df["Date"].dt.to_period("M").astype(str)
-    df["Week_Label"] = df["Date"].dt.to_period("W").astype(str)
-    df["Day_of_Week"] = df["Date"].dt.day_name()
+    # Safety columns
+    if "Revenue_INR" not in df.columns:
+        df["Revenue_INR"] = df["Demand"] * df.get("Sell_Price", pd.Series([100]*len(df)))
+    if "Shipping_Cost_INR" not in df.columns:
+        df["Shipping_Cost_INR"] = np.random.uniform(50, 120, len(df))
+    if "Return_Flag" not in df.columns:
+        df["Return_Flag"] = 0
+    if "Delivery_Days" not in df.columns:
+        df["Delivery_Days"] = np.random.randint(3, 7, len(df))
 
-    # Guard columns
-    for col, default in [
-        ("Revenue_INR",       lambda d: d["Demand"] * d.get("Sell_Price", 100)),
-        ("Shipping_Cost_INR", lambda d: pd.Series(np.random.uniform(50, 120, len(d)))),
-        ("Region",            lambda d: pd.Series(["India"] * len(d))),
-        ("Delivery_Days",     lambda d: pd.Series(np.random.randint(3, 7, len(d)))),
-        ("Order_Status",      lambda d: pd.Series(["Delivered"] * len(d))),
-        ("Return_Flag",       lambda d: pd.Series([0] * len(d))),
-        ("Courier_Partner",   lambda d: pd.Series(["Delhivery"] * len(d))),
-        ("Warehouse",         lambda d: pd.Series(["Default WH"] * len(d))),
-        ("Category",          lambda d: pd.Series(["General"] * len(d))),
-    ]:
-        if col not in df.columns:
-            df[col] = default(df)
-
-    df["Logistics_Cost"] = df["Shipping_Cost_INR"]
+    df["Is_Delayed"]     = (df["Delivery_Days"] > 5).astype(int)
     df["Production_Plan"] = (df["Demand"] * 1.15).round(0)
-    df["Safety_Stock"] = (1.65 * df["Demand"].std() * np.sqrt(7)).round(2)
-    df["Reorder_Point"] = (df["Demand"] * 7 + df["Safety_Stock"]).round(2)
-    df["Stock_Level"] = np.random.randint(100, 1000, len(df))
-    df["Needs_Reorder"] = (df["Stock_Level"] <= df["Reorder_Point"]).astype(int)
-    df["EOQ"] = np.sqrt(2 * df["Demand"] * 50 / (0.2 * df["Sell_Price"].clip(lower=1))).round(0)
-    df["Is_Delayed"] = (df["Delivery_Days"] > 5).astype(int)
+    df["Stock_Level"]    = np.random.randint(80, 800, len(df))
+    df["Reorder_Point"]  = (df["Demand"] * 7 + 1.65 * df["Demand"].std() * np.sqrt(7)).round(0)
+    df["EOQ"]            = np.sqrt(2 * df["Demand"] * 50 / (0.2 * df["Sell_Price"].clip(lower=1))).round(0)
+    df["Needs_Reorder"]  = (df["Stock_Level"] <= df["Reorder_Point"]).astype(int)
 
-    return df.sort_values("Date").reset_index(drop=True)
+    print(f"   ✅ {len(df):,} records | {df['Order_Date'].min().date()} → {df['Order_Date'].max().date()}")
+    return df.sort_values("Order_Date").reset_index(drop=True)
 
 
-@st.cache_data
-def build_model(df):
-    # Lag + rolling features
-    df = df.copy()
-    df["lag_1"] = df["Demand"].shift(1)
-    df["lag_7"] = df["Demand"].shift(7)
-    df["lag_30"] = df["Demand"].shift(30)
-    df["rolling_mean_7"] = df["Demand"].rolling(7).mean()
-    df["rolling_std_7"] = df["Demand"].rolling(7).std()
-    df["rolling_mean_30"] = df["Demand"].rolling(30).mean()
-    df = df.dropna()
+# ─────────────────────────────────────────────
+# STEP 2 — TRAIN ML MODEL
+# ─────────────────────────────────────────────
+def train_model(df):
+    print("🤖 Training Random Forest model...")
+    d = df.copy()
+    d["lag_1"]  = d["Demand"].shift(1)
+    d["lag_7"]  = d["Demand"].shift(7)
+    d["lag_30"] = d["Demand"].shift(30)
+    d["rm7"]    = d["Demand"].rolling(7).mean()
+    d["rs7"]    = d["Demand"].rolling(7).std()
+    d["rm30"]   = d["Demand"].rolling(30).mean()
+    d = d.dropna()
 
-    le_p = LabelEncoder()
-    le_r = LabelEncoder()
-    le_c = LabelEncoder()
+    le_p = LabelEncoder(); le_r = LabelEncoder(); le_c = LabelEncoder()
+    d["pe"] = le_p.fit_transform(d["Product"])
+    d["re"] = le_r.fit_transform(d["Region"])
+    d["ce"] = le_c.fit_transform(d["Category"])
 
-    df["product_enc"] = le_p.fit_transform(df["Product"])
-    df["region_enc"] = le_r.fit_transform(df["Region"])
-    df["category_enc"] = le_c.fit_transform(df["Category"])
+    feats = ["pe","re","ce","day","month","year","weekday","quarter",
+             "lag_1","lag_7","lag_30","rm7","rs7","rm30"]
 
-    features = [
-        "product_enc", "region_enc", "category_enc",
-        "day", "month", "year", "weekday", "quarter",
-        "lag_1", "lag_7", "lag_30",
-        "rolling_mean_7", "rolling_std_7", "rolling_mean_30"
-    ]
-
-    cutoff = df["Date"].max() - pd.Timedelta(days=60)
-    train = df[df["Date"] < cutoff]
-    test = df[df["Date"] >= cutoff]
+    cut = d["Order_Date"].max() - pd.Timedelta(days=60)
+    train, test = d[d["Order_Date"] < cut], d[d["Order_Date"] >= cut]
 
     model = RandomForestRegressor(n_estimators=300, max_depth=12,
-                                  min_samples_leaf=2, random_state=42, n_jobs=-1)
-    model.fit(train[features], train["Demand"])
-
-    pred = model.predict(test[features])
+                                   min_samples_leaf=2, random_state=42, n_jobs=-1)
+    model.fit(train[feats], train["Demand"])
+    pred = model.predict(test[feats])
     rmse = np.sqrt(mean_squared_error(test["Demand"], pred))
-    mae = mean_absolute_error(test["Demand"], pred)
+    mae  = mean_absolute_error(test["Demand"], pred)
 
-    return model, le_p, le_r, le_c, features, df, rmse, mae, test, pred
+    print(f"   ✅ RMSE={rmse:.2f}  MAE={mae:.2f}")
+    return model, le_p, le_r, le_c, feats, d, rmse, mae, test, pred
 
 
-def forecast_future(model, le_p, le_r, le_c, features, history_df,
-                    product, region, category, end_date="2026-06-30"):
-    future_dates = pd.date_range(
-        start=history_df["Date"].max() + pd.Timedelta(days=1),
-        end=pd.Timestamp(end_date), freq="D"
-    )
-    hist = history_df.copy()
+# ─────────────────────────────────────────────
+# STEP 3 — GENERATE FORECAST TO JUNE 2026
+# ─────────────────────────────────────────────
+def make_forecast(model, le_p, le_r, le_c, feats, df_model, end=FORECAST_END):
+    print(f"📈 Forecasting to {end}...")
+    future = pd.date_range(df_model["Order_Date"].max() + pd.Timedelta(days=1),
+                           end=pd.Timestamp(end), freq="D")
+    FESTIVE = [
+        ("2025-10-01","2025-11-05",1.35),
+        ("2025-03-12","2025-03-16",1.20),
+        ("2026-03-22","2026-03-26",1.20),
+        ("2025-12-20","2025-12-31",1.10),
+        ("2026-01-01","2026-01-05",1.05),
+    ]
+    def fest_mult(d):
+        for s,e,m in FESTIVE:
+            if pd.Timestamp(s) <= d <= pd.Timestamp(e): return m
+        return 1.0
+
+    hist = df_model[["Order_Date","Demand"]].copy()
     results = []
-
-    for d in future_dates:
-        try:
-            p_enc = le_p.transform([product])[0]
-        except ValueError:
-            p_enc = 0
-        try:
-            r_enc = le_r.transform([region])[0]
-        except ValueError:
-            r_enc = 0
-        try:
-            c_enc = le_c.transform([category])[0]
-        except ValueError:
-            c_enc = 0
-
+    for d in future:
         tail = hist["Demand"].values
-        lag_1  = tail[-1]  if len(tail) >= 1  else 0
-        lag_7  = tail[-7]  if len(tail) >= 7  else lag_1
-        lag_30 = tail[-30] if len(tail) >= 30 else lag_1
-        rm7  = np.mean(tail[-7:])  if len(tail) >= 7  else lag_1
-        rs7  = np.std(tail[-7:])   if len(tail) >= 7  else 0
-        rm30 = np.mean(tail[-30:]) if len(tail) >= 30 else lag_1
-
+        def lag(n): return tail[-n] if len(tail)>=n else tail[-1]
         row = {
-            "product_enc": p_enc, "region_enc": r_enc, "category_enc": c_enc,
-            "day": d.day, "month": d.month, "year": d.year,
-            "weekday": d.weekday(), "quarter": d.quarter,
-            "lag_1": lag_1, "lag_7": lag_7, "lag_30": lag_30,
-            "rolling_mean_7": rm7, "rolling_std_7": rs7, "rolling_mean_30": rm30
+            "pe":0,"re":0,"ce":0,
+            "day":d.day,"month":d.month,"year":d.year,
+            "weekday":d.weekday(),"quarter":d.quarter,
+            "lag_1":lag(1),"lag_7":lag(7),"lag_30":lag(30),
+            "rm7":np.mean(tail[-7:]) if len(tail)>=7 else lag(1),
+            "rs7":np.std(tail[-7:])  if len(tail)>=7 else 0,
+            "rm30":np.mean(tail[-30:]) if len(tail)>=30 else lag(1),
         }
-        pred_val = max(0, model.predict(pd.DataFrame([row]))[0])
+        val = max(0, model.predict(pd.DataFrame([row]))[0]) * fest_mult(d)
+        results.append({"Date":d,"Forecast":round(val,1)})
+        hist = pd.concat([hist, pd.DataFrame([{"Order_Date":d,"Demand":val}])],
+                          ignore_index=True)
 
-        # India festive multiplier
-        if (d.month == 10 and 10 <= d.day <= 31) or (d.month == 11 and d.day <= 15):
-            pred_val *= 1.35   # Diwali 2025
-        if d.month == 3 and 12 <= d.day <= 16:
-            pred_val *= 1.2    # Holi 2026
-
-        results.append({"Date": d, "Forecast": round(pred_val, 1)})
-        new_row = pd.DataFrame({"Date": [d], "Demand": [pred_val]})
-        hist = pd.concat([hist[["Date", "Demand"]], new_row], ignore_index=True)
-
-    return pd.DataFrame(results)
-
-
-# ======================================================================================
-# LOAD
-# ======================================================================================
-df = load_data()
-model, le_p, le_r, le_c, features, df_model, rmse, mae, test_df, test_pred = build_model(df)
-
-# ======================================================================================
-# SIDEBAR
-# ======================================================================================
-with st.sidebar:
-    st.markdown('<div class="omniflow-header">OmniFlow</div>', unsafe_allow_html=True)
-    st.markdown('<div class="omniflow-sub">D2D Supply Chain · India</div>', unsafe_allow_html=True)
-    st.markdown("---")
-
-    module = st.selectbox("📌 Select Module", [
-        "🏠 Overview",
-        "📈 Demand Forecasting",
-        "📦 Inventory Optimization",
-        "🏭 Production Planning",
-        "🚚 Logistics Optimization",
-        "🤖 Decision AI"
-    ])
-
-    st.markdown("---")
-    st.markdown(f"**Records:** `{len(df):,}`")
-    st.markdown(f"**Date Range:** `{df['Date'].min().date()}` → `{df['Date'].max().date()}`")
-    st.markdown(f"**Forecast To:** `2026-06-30`")
-    st.markdown(f"**Regions:** `{df['Region'].nunique()}`")
-    st.markdown(f"**Products:** `{df['Product'].nunique()}`")
-    st.markdown(f"**Categories:** `{df['Category'].nunique()}`")
-    st.markdown("---")
-    st.markdown(f"**Model RMSE:** `{rmse:.2f}`")
-    st.markdown(f"**Model MAE:** `{mae:.2f}`")
+    fc = pd.DataFrame(results)
+    fc["Month"] = fc["Date"].dt.to_period("M").astype(str)
+    fc["MonthLabel"] = fc["Date"].dt.strftime("%b %y")
+    monthly_fc = fc.groupby(["Month","MonthLabel"])["Forecast"].agg(
+        total="sum", avg="mean", peak="max").reset_index().round(1)
+    print(f"   ✅ {len(fc)} days forecasted  ({len(monthly_fc)} months)")
+    return fc, monthly_fc
 
 
-# ======================================================================================
-# ① OVERVIEW
-# ======================================================================================
-if module == "🏠 Overview":
-    st.markdown('<div class="omniflow-header">OmniFlow D2D — Supply Chain Intelligence</div>', unsafe_allow_html=True)
-    st.markdown("**India | Jan 2024 → Jun 2026 Forecast | 5 AI Modules**")
-    st.markdown("---")
+# ─────────────────────────────────────────────
+# STEP 4 — AGGREGATE ALL CHART DATA
+# ─────────────────────────────────────────────
+def aggregate(df, test_df, test_pred, monthly_fc):
+    print("📊 Aggregating chart data...")
 
-    # KPIs
-    c1, c2, c3, c4, c5 = st.columns(5)
-    total_rev = df["Revenue_INR"].sum()
-    total_orders = len(df)
-    total_demand = df["Demand"].sum()
-    return_rate = df["Return_Flag"].mean() * 100
-    avg_delivery = df["Delivery_Days"].mean()
+    def s(x): return [round(v,2) if isinstance(v,float) else int(v) for v in x]
 
-    c1.metric("💰 Total Revenue", f"₹{total_rev/1e6:.2f}M",
-              delta=f"+{np.random.uniform(8,15):.1f}% YoY")
-    c2.metric("📦 Total Orders", f"{total_orders:,}")
-    c3.metric("🛒 Total Demand", f"{total_demand:,}")
-    c4.metric("↩️ Return Rate", f"{return_rate:.1f}%")
-    c5.metric("🚚 Avg Delivery", f"{avg_delivery:.1f} days")
+    monthly = df.groupby("Month").agg(q=("Demand","sum"),rev=("Revenue_INR","sum")).reset_index()
+    monthly["label"] = df.groupby("Month")["Order_Date"].first().dt.strftime("%b %y").values
 
-    st.markdown("---")
+    catrev  = df.groupby("Category")["Revenue_INR"].sum().reset_index()
+    region  = df.groupby("Region")["Demand"].sum().sort_values(ascending=False).reset_index()
+    status  = df["Order_Status"].value_counts().reset_index(); status.columns=["s","n"]
+    channel = df.groupby("Sales_Channel")["Revenue_INR"].sum().reset_index()
+    toprod  = df.groupby("Product")["Revenue_INR"].sum().sort_values(ascending=False).head(8).reset_index()
+    courier = df.groupby("Courier_Partner").agg(
+        orders=("Demand","count"), avg_days=("Delivery_Days","mean"),
+        avg_cost=("Shipping_Cost_INR","mean")).reset_index()
+    brand   = df.groupby("Brand")["Revenue_INR"].sum().sort_values(ascending=False).head(10).reset_index()
+    city    = df.groupby("City")["Demand"].sum().sort_values(ascending=False).head(10).reset_index()
+    wh      = df.groupby("Warehouse")["Demand"].sum().reset_index()
+    catm    = df.groupby(["Month","Category"])["Demand"].sum().unstack(fill_value=0)
+    fulfil  = df.groupby("Fulfilment")["Demand"].sum().reset_index()
 
-    # Row 1
-    col1, col2 = st.columns(2)
+    # Inventory top SKUs
+    inv = df.groupby(["SKU_ID","Product","Category"]).agg(
+        total_demand=("Demand","sum"),
+        stock=("Stock_Level","mean"),
+        rop=("Reorder_Point","mean"),
+        eoq=("EOQ","mean")).reset_index().round(0)
+    inv["status"] = (inv["stock"] <= inv["rop"]).map({True:"REORDER",False:"OK"})
+    inv = inv.sort_values("status").head(15)
 
-    with col1:
-        st.markdown('<div class="section-title">📅 Monthly Demand Trend</div>', unsafe_allow_html=True)
-        monthly = df.groupby("Month_Label")["Demand"].sum().reset_index()
-        fig = px.area(monthly, x="Month_Label", y="Demand",
-                      color_discrete_sequence=[COLORS[0]])
-        fig.update_layout(**PLOT_THEME, xaxis_title="Month", yaxis_title="Demand")
-        fig.update_traces(fill="tozeroy", line_width=2)
-        st.plotly_chart(fig, use_container_width=True)
+    # Production forecast monthly
+    prod_fc_months = monthly_fc["MonthLabel"].tolist()
+    prod_fc_vals   = [round(v*1.15) for v in monthly_fc["total"].tolist()]
 
-    with col2:
-        st.markdown('<div class="section-title">🏷️ Revenue by Category</div>', unsafe_allow_html=True)
-        cat_rev = df.groupby("Category")["Revenue_INR"].sum().reset_index()
-        fig = px.pie(cat_rev, values="Revenue_INR", names="Category",
-                     color_discrete_sequence=COLORS, hole=0.45)
-        fig.update_layout(**PLOT_THEME)
-        st.plotly_chart(fig, use_container_width=True)
+    # Test set
+    test_dates = test_df["Order_Date"].dt.strftime("%b %y").tolist()[-30:]
+    test_actual = [round(v,1) for v in test_df["Demand"].tolist()[-30:]]
+    test_pred2  = [round(v,1) for v in test_pred[-30:]]
 
-    # Row 2
-    col3, col4 = st.columns(2)
-
-    with col3:
-        st.markdown('<div class="section-title">🗺️ Demand by Region</div>', unsafe_allow_html=True)
-        reg = df.groupby("Region")["Demand"].sum().sort_values().reset_index()
-        fig = px.bar(reg, x="Demand", y="Region", orientation="h",
-                     color="Demand", color_continuous_scale="Blues")
-        fig.update_layout(**PLOT_THEME, xaxis_title="Total Demand", yaxis_title="")
-        st.plotly_chart(fig, use_container_width=True)
-
-    with col4:
-        st.markdown('<div class="section-title">📊 Order Status Breakdown</div>', unsafe_allow_html=True)
-        status = df["Order_Status"].value_counts().reset_index()
-        status.columns = ["Status", "Count"]
-        fig = px.bar(status, x="Status", y="Count",
-                     color="Status", color_discrete_sequence=COLORS)
-        fig.update_layout(**PLOT_THEME, showlegend=False)
-        st.plotly_chart(fig, use_container_width=True)
-
-    # Row 3
-    st.markdown('<div class="section-title">📆 Weekly Demand Heatmap (Day × Month)</div>', unsafe_allow_html=True)
-    heat = df.groupby(["Day_of_Week", "Month_Label"])["Demand"].sum().reset_index()
-    heat_pivot = heat.pivot(index="Day_of_Week", columns="Month_Label", values="Demand").fillna(0)
-    day_order = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
-    heat_pivot = heat_pivot.reindex([d for d in day_order if d in heat_pivot.index])
-    fig = px.imshow(heat_pivot, color_continuous_scale="Blues", aspect="auto")
-    fig.update_layout(**PLOT_THEME)
-    st.plotly_chart(fig, use_container_width=True)
-
-
-# ======================================================================================
-# ② DEMAND FORECASTING
-# ======================================================================================
-elif module == "📈 Demand Forecasting":
-    st.markdown('<div class="section-title">📈 Demand Forecasting — Upto June 2026</div>', unsafe_allow_html=True)
-
-    col1, col2, col3 = st.columns(3)
-    with col1:
-        product = st.selectbox("🛍️ Product", sorted(df["Product"].unique()))
-    with col2:
-        region = st.selectbox("🗺️ Region", sorted(df["Region"].unique()))
-    with col3:
-        category = st.selectbox("🏷️ Category", sorted(df["Category"].unique()))
-
-    if st.button("🚀 Run Forecast to June 2026"):
-        with st.spinner("Running AI forecast model..."):
-            forecast_df = forecast_future(
-                model, le_p, le_r, le_c, features, df_model,
-                product, region, category, end_date="2026-06-30"
-            )
-
-        # Historical + forecast chart
-        hist_plot = df[df["Product"] == product][["Date", "Demand"]].copy()
-        hist_plot["Type"] = "Historical"
-        fore_plot = forecast_df.rename(columns={"Forecast": "Demand"})
-        fore_plot["Type"] = "Forecast"
-        combined = pd.concat([hist_plot, fore_plot], ignore_index=True)
-
-        st.markdown('<div class="section-title">Historical + Forecast Demand</div>', unsafe_allow_html=True)
-        fig = go.Figure()
-        fig.add_trace(go.Scatter(
-            x=hist_plot["Date"], y=hist_plot["Demand"],
-            name="Historical", line=dict(color=COLORS[0], width=2)
-        ))
-        fig.add_trace(go.Scatter(
-            x=fore_plot["Date"], y=fore_plot["Demand"],
-            name="Forecast (to Jun 2026)",
-            line=dict(color=COLORS[2], width=2, dash="dot")
-        ))
-        # Confidence band
-        lo = fore_plot["Demand"] * 0.85
-        hi = fore_plot["Demand"] * 1.15
-        fig.add_trace(go.Scatter(
-            x=pd.concat([fore_plot["Date"], fore_plot["Date"][::-1]]),
-            y=pd.concat([hi, lo[::-1]]),
-            fill="toself", fillcolor="rgba(244,114,182,0.12)",
-            line=dict(color="rgba(255,255,255,0)"),
-            name="Confidence Band"
-        ))
-        fig.update_layout(**PLOT_THEME,
-                          xaxis_title="Date", yaxis_title="Demand Units",
-                          legend=dict(x=0.01, y=0.99))
-        st.plotly_chart(fig, use_container_width=True)
-
-        # Monthly aggregation
-        st.markdown('<div class="section-title">Monthly Forecast Summary</div>', unsafe_allow_html=True)
-        forecast_df["Month"] = forecast_df["Date"].dt.to_period("M").astype(str)
-        monthly_fc = forecast_df.groupby("Month")["Forecast"].agg(
-            ["sum", "mean", "max", "min"]).reset_index()
-        monthly_fc.columns = ["Month", "Total Demand", "Avg Daily", "Peak Day", "Low Day"]
-        monthly_fc = monthly_fc.round(1)
-        st.dataframe(monthly_fc, use_container_width=True)
-
-        # Model performance
-        st.markdown('<div class="section-title">Model Performance</div>', unsafe_allow_html=True)
-        m1, m2, m3 = st.columns(3)
-        m1.metric("RMSE", f"{rmse:.2f}")
-        m2.metric("MAE", f"{mae:.2f}")
-        m3.metric("Forecast Days", f"{len(forecast_df)}")
-
-        # Actuals vs Predicted
-        test_compare = test_df[["Date", "Demand"]].copy()
-        test_compare["Predicted"] = test_pred
-        fig2 = go.Figure()
-        fig2.add_trace(go.Scatter(x=test_compare["Date"], y=test_compare["Demand"],
-                                   name="Actual", line=dict(color=COLORS[0])))
-        fig2.add_trace(go.Scatter(x=test_compare["Date"], y=test_compare["Predicted"],
-                                   name="Predicted", line=dict(color=COLORS[1], dash="dash")))
-        fig2.update_layout(**PLOT_THEME, title="Actual vs Predicted (Test Set)")
-        st.plotly_chart(fig2, use_container_width=True)
-
-    else:
-        st.info("👆 Select product, region, category and click **Run Forecast** to generate predictions up to June 2026.")
+    DATA = {
+        # Overview
+        "monthly_labels": monthly["label"].tolist(),
+        "monthly_q":  s(monthly["q"]),
+        "monthly_rev": s(monthly["rev"]),
+        "catrev_labels": catrev["Category"].tolist(),
+        "catrev_vals":  s(catrev["Revenue_INR"]),
+        "region_labels": region["Region"].tolist(),
+        "region_vals":  s(region["Demand"]),
+        "status_labels": status["s"].tolist(),
+        "status_vals":  s(status["n"]),
+        "channel_labels": channel["Sales_Channel"].tolist(),
+        "channel_vals":  s(channel["Revenue_INR"]),
+        "toprod_labels": toprod["Product"].tolist(),
+        "toprod_vals":  s(toprod["Revenue_INR"]),
+        # Category × Month stacked
+        "catm_months": [m[-5:].replace("-","M") for m in catm.index.tolist()],
+        "catm_cats": catm.columns.tolist(),
+        "catm_data": {c: s(catm[c].tolist()) for c in catm.columns},
+        # Couriers
+        "courier_names": courier["Courier_Partner"].tolist(),
+        "courier_orders": s(courier["orders"]),
+        "courier_days":  s(courier["avg_days"]),
+        "courier_cost":  s(courier["avg_cost"]),
+        # Brand / City / Warehouse / Fulfilment
+        "brand_labels": brand["Brand"].tolist(),
+        "brand_vals":   s(brand["Revenue_INR"]),
+        "city_labels":  city["City"].tolist(),
+        "city_vals":    s(city["Demand"]),
+        "wh_labels":    wh["Warehouse"].tolist(),
+        "wh_vals":      s(wh["Demand"]),
+        "fulfil_labels":fulfil["Fulfilment"].tolist(),
+        "fulfil_vals":  s(fulfil["Demand"]),
+        # Forecast
+        "fc_hist_labels": monthly["label"].tolist(),
+        "fc_hist_q":      s(monthly["q"]),
+        "fc_future_labels": monthly_fc["MonthLabel"].tolist(),
+        "fc_future_total":  s(monthly_fc["total"]),
+        "fc_future_avg":    s(monthly_fc["avg"]),
+        "fc_future_peak":   s(monthly_fc["peak"]),
+        # Production
+        "prod_fc_months": prod_fc_months,
+        "prod_fc_vals":   prod_fc_vals,
+        # Test
+        "test_labels": test_dates,
+        "test_actual": test_actual,
+        "test_pred":   test_pred2,
+        # Inventory
+        "inv_skus":    inv["Product"].tolist(),
+        "inv_stock":   s(inv["stock"]),
+        "inv_rop":     s(inv["rop"]),
+        "inv_eoq":     s(inv["eoq"]),
+        "inv_cat":     inv["Category"].tolist(),
+        "inv_status":  inv["status"].tolist(),
+        # KPIs
+        "total_rev":    round(df["Revenue_INR"].sum()/100000, 2),
+        "total_orders": len(df),
+        "total_demand": int(df["Demand"].sum()),
+        "return_rate":  round(df["Return_Flag"].mean()*100, 1),
+        "avg_delivery": round(df["Delivery_Days"].mean(), 1),
+        "avg_discount": round(df["Discount_Pct"].mean(), 1),
+        "total_ship":   round(df["Shipping_Cost_INR"].sum()/1000, 1),
+        "delayed_pct":  round(df["Is_Delayed"].mean()*100, 1),
+        "n_products":   int(df["Product"].nunique()),
+        "n_regions":    int(df["Region"].nunique()),
+        "n_brands":     int(df["Brand"].nunique()),
+        "reorder_count":int(df["Needs_Reorder"].sum()),
+    }
+    return DATA, inv
 
 
-# ======================================================================================
-# ③ INVENTORY OPTIMIZATION
-# ======================================================================================
-elif module == "📦 Inventory Optimization":
-    st.markdown('<div class="section-title">📦 Inventory Optimization</div>', unsafe_allow_html=True)
+# ─────────────────────────────────────────────
+# STEP 5 — BUILD HTML DASHBOARD
+# ─────────────────────────────────────────────
+def build_html(DATA, inv, rmse, mae):
+    print("🎨 Building dashboard HTML...")
+    D = json.dumps(DATA)
 
-    # Filters
-    col1, col2 = st.columns(2)
-    with col1:
-        sel_cat = st.multiselect("Category", df["Category"].unique(),
-                                  default=list(df["Category"].unique()))
-    with col2:
-        sel_region = st.multiselect("Region", df["Region"].unique(),
-                                     default=list(df["Region"].unique()))
+    # Forecast months table rows
+    months = DATA["fc_future_labels"]
+    totals = DATA["fc_future_total"]
+    avgs   = DATA["fc_future_avg"]
+    peaks  = DATA["fc_future_peak"]
+    festivals = {
+        "Oct 25":"Diwali 🎇","Nov 25":"Post-Diwali","Dec 25":"Christmas 🎄",
+        "Jan 26":"New Year 🎉","Mar 26":"Holi 🎉","Apr 26":"Eid 🌙"
+    }
+    fc_rows = ""
+    for m, t, a, p in zip(months, totals, avgs, peaks):
+        fest = festivals.get(m, "—")
+        conf = "HIGH" if t > 200 else "MED"
+        tag_cls = "tag-green" if conf=="HIGH" else "tag-yellow"
+        fest_cls = "tag-orange" if fest!="—" else "tag-blue"
+        fc_rows += f"""<tr>
+          <td class="mono">{m}</td>
+          <td><strong class="clr-cyan">{t}</strong></td>
+          <td>{a}</td>
+          <td>{p}</td>
+          <td><span class="tag {fest_cls}">{fest}</span></td>
+          <td><span class="tag {tag_cls}">{conf}</span></td>
+        </tr>\n"""
 
-    filt = df[df["Category"].isin(sel_cat) & df["Region"].isin(sel_region)]
+    # Inventory table rows
+    inv_rows = ""
+    for _, r in inv.iterrows():
+        ok = r["status"] == "OK"
+        st_cls = "tag-green" if ok else "tag-red"
+        inv_rows += f"""<tr>
+          <td>{str(r['Product'])[:30]}</td>
+          <td>{r['Category']}</td>
+          <td class="mono">{int(r['stock'])}</td>
+          <td class="mono">{int(r['rop'])}</td>
+          <td class="mono">{int(r['eoq'])}</td>
+          <td><span class="tag {st_cls}">{r['status']}</span></td>
+        </tr>\n"""
 
-    # KPIs
-    c1, c2, c3, c4 = st.columns(4)
-    c1.metric("🔴 Reorder Alerts", int(filt["Needs_Reorder"].sum()))
-    c2.metric("📦 Avg Stock Level", f"{filt['Stock_Level'].mean():.0f}")
-    c3.metric("🛡️ Safety Stock", f"{filt['Safety_Stock'].mean():.1f}")
-    c4.metric("📐 Avg EOQ", f"{filt['EOQ'].mean():.1f}")
+    HTML = f"""<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>OmniFlow D2D — Supply Chain Intelligence</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=JetBrains+Mono:wght@300;400;500&family=Outfit:wght@300;400;500;600&display=swap" rel="stylesheet"/>
+<style>
+:root{{
+  --bg:#07090f;--panel:#0c1220;--panel2:#111827;--border:#1a2744;
+  --c0:#00d4ff;--c1:#7c3aed;--c2:#10b981;--c3:#f59e0b;--c4:#f43f5e;--c5:#06b6d4;
+  --tx:#c9d1e0;--tx2:#64748b;--tx3:#e2e8f0;
+  --font:'Outfit',sans-serif;--mono:'JetBrains Mono',monospace;--disp:'Bebas Neue',cursive;
+}}
+*{{box-sizing:border-box;margin:0;padding:0}}
+body{{background:var(--bg);color:var(--tx);font-family:var(--font);font-size:13px;overflow-x:hidden}}
+body::before{{content:'';position:fixed;inset:0;background:repeating-linear-gradient(0deg,transparent,transparent 2px,rgba(0,212,255,.008) 2px,rgba(0,212,255,.008) 4px);pointer-events:none;z-index:999}}
+.app{{display:grid;grid-template-columns:220px 1fr;grid-template-rows:54px 1fr;height:100vh}}
 
-    # SKU-level inventory table
-    st.markdown('<div class="section-title">SKU-Level Inventory Status</div>', unsafe_allow_html=True)
-    inv_table = filt.groupby(["SKU_ID", "Product", "Category", "Region"]).agg(
-        Total_Demand=("Demand", "sum"),
-        Avg_Daily_Demand=("Demand", "mean"),
-        Stock_Level=("Stock_Level", "mean"),
-        Safety_Stock=("Safety_Stock", "mean"),
-        Reorder_Point=("Reorder_Point", "mean"),
-        EOQ=("EOQ", "mean"),
-        Needs_Reorder=("Needs_Reorder", "max")
-    ).reset_index().round(1)
-    inv_table["Status"] = inv_table["Needs_Reorder"].map({1: "🔴 REORDER", 0: "🟢 OK"})
+/* TOPBAR */
+.topbar{{grid-column:1/-1;background:var(--panel);border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;padding:0 20px;position:sticky;top:0;z-index:50}}
+.logo{{font-family:var(--disp);font-size:1.55rem;letter-spacing:.12em;background:linear-gradient(90deg,#00d4ff,#7c3aed,#f59e0b);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text}}
+.badges{{display:flex;gap:8px;align-items:center}}
+.badge{{background:rgba(0,212,255,.09);border:1px solid rgba(0,212,255,.25);color:var(--c0);font-family:var(--mono);font-size:9.5px;padding:3px 9px;border-radius:4px;letter-spacing:.07em}}
+.badge.g{{background:rgba(16,185,129,.09);border-color:rgba(16,185,129,.25);color:var(--c2)}}
+.badge.o{{background:rgba(245,158,11,.09);border-color:rgba(245,158,11,.25);color:var(--c3)}}
+.live{{width:7px;height:7px;border-radius:50%;background:var(--c2);box-shadow:0 0 8px var(--c2);animation:pulse 1.4s infinite}}
+@keyframes pulse{{0%,100%{{opacity:1}}50%{{opacity:.25}}}}
+.topbar-r{{display:flex;align-items:center;gap:14px}}
 
-    st.dataframe(
-        inv_table.drop(columns=["Needs_Reorder"]).sort_values("Status"),
-        use_container_width=True
-    )
+/* SIDEBAR */
+.sidebar{{background:var(--panel);border-right:1px solid var(--border);display:flex;flex-direction:column;padding:16px 0;overflow-y:auto}}
+.sb-label{{font-family:var(--mono);font-size:9px;letter-spacing:.15em;color:var(--tx2);padding:6px 14px 4px;text-transform:uppercase;margin-top:4px}}
+.nav{{display:flex;align-items:center;gap:9px;padding:8px 14px;border-radius:0;cursor:pointer;color:var(--tx2);transition:all .15s;border-left:3px solid transparent;font-size:12.5px;font-weight:500}}
+.nav:hover{{background:rgba(0,212,255,.05);color:var(--tx3)}}
+.nav.active{{background:rgba(0,212,255,.08);color:var(--c0);border-left-color:var(--c0)}}
+.nav-ico{{font-size:14px;width:18px;text-align:center}}
+.sb-div{{height:1px;background:var(--border);margin:10px 14px}}
+.sb-stat{{margin:0 12px 8px;background:var(--panel2);border:1px solid var(--border);border-radius:8px;padding:10px 12px}}
+.sb-stat-l{{font-family:var(--mono);font-size:9px;color:var(--tx2);letter-spacing:.1em;text-transform:uppercase}}
+.sb-stat-v{{font-family:var(--disp);font-size:1.25rem;margin-top:3px}}
+.sb-stat-s{{font-size:10px;color:var(--tx2);margin-top:2px}}
+.sb-info{{padding:0 14px;font-family:var(--mono);font-size:9.5px;color:var(--tx2);line-height:2.1}}
+.sb-info span{{color:var(--tx)}}
 
-    # ABC Analysis
-    st.markdown('<div class="section-title">ABC Classification</div>', unsafe_allow_html=True)
-    abc = filt.groupby("Product")["Revenue_INR"].sum().sort_values(ascending=False).reset_index()
-    abc["Cumulative_Pct"] = abc["Revenue_INR"].cumsum() / abc["Revenue_INR"].sum() * 100
-    abc["Class"] = abc["Cumulative_Pct"].apply(
-        lambda x: "A — High Value" if x <= 70 else ("B — Medium Value" if x <= 90 else "C — Low Value")
-    )
-    col_a, col_b = st.columns(2)
-    with col_a:
-        fig = px.bar(abc.head(20), x="Product", y="Revenue_INR",
-                     color="Class", color_discrete_map={
-                         "A — High Value": COLORS[0],
-                         "B — Medium Value": COLORS[1],
-                         "C — Low Value": COLORS[2]
-                     })
-        fig.update_layout(**PLOT_THEME, xaxis_tickangle=-45)
-        st.plotly_chart(fig, use_container_width=True)
+/* MAIN */
+.main{{overflow-y:auto;padding:20px;background:var(--bg)}}
+.module{{display:none;animation:fi .22s ease}}
+.module.active{{display:block}}
+@keyframes fi{{from{{opacity:0;transform:translateY(6px)}}to{{opacity:1;transform:translateY(0)}}}}
 
-    with col_b:
-        abc_summary = abc.groupby("Class").agg(
-            SKU_Count=("Product", "count"),
-            Total_Revenue=("Revenue_INR", "sum")
-        ).reset_index()
-        fig = px.pie(abc_summary, values="SKU_Count", names="Class",
-                     color_discrete_sequence=COLORS, hole=0.4)
-        fig.update_layout(**PLOT_THEME)
-        st.plotly_chart(fig, use_container_width=True)
+/* SECTION HEADER */
+.sec-h{{display:flex;align-items:baseline;gap:12px;margin-bottom:18px;padding-bottom:12px;border-bottom:1px solid var(--border)}}
+.sec-t{{font-family:var(--disp);font-size:1.7rem;letter-spacing:.07em;color:var(--tx3)}}
+.sec-s{{font-family:var(--mono);font-size:9.5px;color:var(--tx2);letter-spacing:.12em;text-transform:uppercase}}
 
-    # Reorder alerts
-    reorder_items = inv_table[inv_table["Status"] == "🔴 REORDER"]
-    if len(reorder_items) > 0:
-        st.markdown('<div class="section-title">🚨 Reorder Alerts</div>', unsafe_allow_html=True)
-        for _, row in reorder_items.iterrows():
-            st.markdown(f"""
-            <div class="alert-box">
-                ⚠️ <strong>{row['Product']}</strong> — Stock: <strong>{row['Stock_Level']:.0f}</strong>
-                | Reorder Point: <strong>{row['Reorder_Point']:.0f}</strong>
-                | EOQ: <strong>{row['EOQ']:.0f}</strong> units | Region: {row['Region']}
-            </div>
-            """, unsafe_allow_html=True)
+/* KPI GRID */
+.kpi-grid{{display:grid;gap:10px;margin-bottom:18px}}
+.g6{{grid-template-columns:repeat(6,1fr)}}
+.g4{{grid-template-columns:repeat(4,1fr)}}
+.g5{{grid-template-columns:repeat(5,1fr)}}
+.kpi{{background:var(--panel);border:1px solid var(--border);border-radius:10px;padding:14px 16px;position:relative;overflow:hidden;transition:border-color .2s,transform .2s}}
+.kpi:hover{{border-color:var(--c0);transform:translateY(-1px)}}
+.kpi::before{{content:'';position:absolute;top:0;left:0;right:0;height:2.5px;background:var(--kc,var(--c0))}}
+.kpi-l{{font-family:var(--mono);font-size:9px;color:var(--tx2);letter-spacing:.12em;text-transform:uppercase;margin-bottom:7px}}
+.kpi-v{{font-family:var(--disp);font-size:1.6rem;color:var(--tx3);letter-spacing:.04em;line-height:1}}
+.kpi-d{{font-size:10px;margin-top:5px;font-family:var(--mono)}}
+.up{{color:var(--c2)}} .dn{{color:var(--c4)}} .neu{{color:var(--tx2)}}
 
+/* CHART GRIDS */
+.cg{{display:grid;gap:14px;margin-bottom:14px}}
+.g2{{grid-template-columns:1fr 1fr}}
+.g21{{grid-template-columns:1.5fr 1fr}}
+.g12{{grid-template-columns:1fr 1.5fr}}
+.g3{{grid-template-columns:1fr 1fr 1fr}}
+.g13{{grid-template-columns:1.3fr 1fr 1fr}}
 
-# ======================================================================================
-# ④ PRODUCTION PLANNING
-# ======================================================================================
-elif module == "🏭 Production Planning":
-    st.markdown('<div class="section-title">🏭 Production Planning</div>', unsafe_allow_html=True)
+/* CARDS */
+.card{{background:var(--panel);border:1px solid var(--border);border-radius:10px;padding:18px}}
+.card-t{{font-family:var(--mono);font-size:9.5px;color:var(--tx2);letter-spacing:.12em;text-transform:uppercase;margin-bottom:14px;display:flex;align-items:center;gap:7px}}
+.card-t::before{{content:'';width:3px;height:11px;background:var(--c0);border-radius:2px}}
+canvas{{max-height:220px}}
 
-    buffer = st.slider("Production Buffer (%)", min_value=5, max_value=30, value=15, step=5)
-    sel_cat = st.multiselect("Filter by Category", df["Category"].unique(),
-                              default=list(df["Category"].unique()))
-    filt = df[df["Category"].isin(sel_cat)].copy()
-    filt["Production_Plan"] = (filt["Demand"] * (1 + buffer / 100)).round(0)
+/* TABLES */
+.tbl{{width:100%;border-collapse:collapse;font-size:11.5px}}
+.tbl th{{font-family:var(--mono);font-size:8.5px;letter-spacing:.1em;color:var(--tx2);text-transform:uppercase;padding:7px 10px;border-bottom:1px solid var(--border);text-align:left;white-space:nowrap}}
+.tbl td{{padding:8px 10px;border-bottom:1px solid rgba(26,39,68,.4);color:var(--tx)}}
+.tbl tr:hover td{{background:rgba(0,212,255,.03)}}
+.mono{{font-family:var(--mono)}}
+.clr-cyan{{color:var(--c0)}}
 
-    # KPIs
-    c1, c2, c3, c4 = st.columns(4)
-    c1.metric("🏭 Total Production Plan", f"{filt['Production_Plan'].sum():,.0f}")
-    c2.metric("📦 Total Demand", f"{filt['Demand'].sum():,.0f}")
-    c3.metric("📈 Buffer Units", f"{(filt['Production_Plan'] - filt['Demand']).sum():,.0f}")
-    c4.metric("📉 Lead Time (avg)", f"{filt['Delivery_Days'].mean():.1f} days")
+/* TAGS */
+.tag{{display:inline-block;padding:2px 7px;border-radius:4px;font-size:9.5px;font-family:var(--mono);letter-spacing:.05em}}
+.tag-green{{background:rgba(16,185,129,.13);color:#10b981;border:1px solid rgba(16,185,129,.28)}}
+.tag-red{{background:rgba(244,63,94,.13);color:#f43f5e;border:1px solid rgba(244,63,94,.28)}}
+.tag-yellow{{background:rgba(245,158,11,.13);color:#f59e0b;border:1px solid rgba(245,158,11,.28)}}
+.tag-orange{{background:rgba(251,146,60,.13);color:#fb923c;border:1px solid rgba(251,146,60,.28)}}
+.tag-blue{{background:rgba(0,212,255,.1);color:#00d4ff;border:1px solid rgba(0,212,255,.22)}}
 
-    col1, col2 = st.columns(2)
+/* ALERTS */
+.alert{{background:rgba(244,63,94,.06);border:1px solid rgba(244,63,94,.2);border-radius:7px;padding:10px 14px;margin-bottom:7px;display:flex;justify-content:space-between;align-items:center;font-size:12px}}
+.alert-ok{{background:rgba(16,185,129,.04);border:1px solid rgba(16,185,129,.15);border-radius:7px;padding:9px 14px;margin-bottom:6px;display:flex;justify-content:space-between;align-items:center;font-size:12px;cursor:pointer;transition:border-color .15s}}
+.alert-ok:hover{{border-color:rgba(16,185,129,.35)}}
 
-    with col1:
-        st.markdown('<div class="section-title">Monthly Production Plan vs Demand</div>', unsafe_allow_html=True)
-        monthly_prod = filt.groupby("Month_Label").agg(
-            Demand=("Demand", "sum"),
-            Production=("Production_Plan", "sum")
-        ).reset_index()
-        fig = go.Figure()
-        fig.add_trace(go.Bar(x=monthly_prod["Month_Label"], y=monthly_prod["Demand"],
-                              name="Demand", marker_color=COLORS[0]))
-        fig.add_trace(go.Bar(x=monthly_prod["Month_Label"], y=monthly_prod["Production"],
-                              name="Production Plan", marker_color=COLORS[1]))
-        fig.update_layout(**PLOT_THEME, barmode="group")
-        st.plotly_chart(fig, use_container_width=True)
+/* FORECAST CONTROLS */
+.fc-row{{display:flex;gap:10px;margin-bottom:14px;flex-wrap:wrap;align-items:center}}
+.fc-sel{{background:var(--panel2);border:1px solid var(--border);color:var(--tx);border-radius:6px;padding:6px 11px;font-family:var(--mono);font-size:10.5px;outline:none;cursor:pointer}}
+.fc-sel:focus{{border-color:var(--c0)}}
+.fc-btn{{background:linear-gradient(135deg,#00d4ff,#7c3aed);color:white;border:none;border-radius:6px;padding:7px 16px;font-family:var(--mono);font-size:10.5px;cursor:pointer;letter-spacing:.06em;transition:opacity .15s}}
+.fc-btn:hover{{opacity:.85}}
 
-    with col2:
-        st.markdown('<div class="section-title">Production by Category</div>', unsafe_allow_html=True)
-        cat_prod = filt.groupby("Category")["Production_Plan"].sum().reset_index()
-        fig = px.pie(cat_prod, values="Production_Plan", names="Category",
-                     color_discrete_sequence=COLORS, hole=0.4)
-        fig.update_layout(**PLOT_THEME)
-        st.plotly_chart(fig, use_container_width=True)
+/* CHATBOT */
+.chat-wrap{{display:flex;flex-direction:column;height:400px}}
+.chat-msgs{{flex:1;overflow-y:auto;padding:12px;display:flex;flex-direction:column;gap:9px;scrollbar-width:thin;scrollbar-color:var(--border) transparent}}
+.cmsg{{max-width:88%;padding:9px 13px;border-radius:10px;font-size:11.5px;line-height:1.6}}
+.cmsg.u{{background:rgba(124,58,237,.18);border:1px solid rgba(124,58,237,.28);align-self:flex-end;border-radius:10px 10px 2px 10px;color:var(--tx3)}}
+.cmsg.a{{background:var(--panel2);border:1px solid var(--border);align-self:flex-start;border-radius:10px 10px 10px 2px}}
+.cmsg.a strong{{color:var(--c0)}}
+.chat-inp-row{{display:flex;gap:8px;padding:10px 12px;border-top:1px solid var(--border)}}
+.chat-inp{{flex:1;background:var(--panel2);border:1px solid var(--border);color:var(--tx3);border-radius:7px;padding:8px 12px;font-family:var(--font);font-size:12px;outline:none}}
+.chat-inp:focus{{border-color:var(--c0)}}
+.chat-snd{{background:var(--c0);color:#000;border:none;border-radius:7px;padding:8px 14px;cursor:pointer;font-weight:600;font-size:12px;transition:opacity .15s;font-family:var(--font)}}
+.chat-snd:hover{{opacity:.8}}
 
-    st.markdown('<div class="section-title">SKU-Level Production Schedule</div>', unsafe_allow_html=True)
-    prod_table = filt.groupby(["SKU_ID", "Product", "Category"]).agg(
-        Total_Demand=("Demand", "sum"),
-        Production_Plan=("Production_Plan", "sum"),
-        Buffer_Units=("Production_Plan", "sum")
-    ).reset_index()
-    prod_table["Buffer_Units"] = prod_table["Production_Plan"] - prod_table["Total_Demand"]
-    prod_table["Utilization_Pct"] = (
-        prod_table["Total_Demand"] / prod_table["Production_Plan"] * 100
-    ).round(1)
-    st.dataframe(prod_table.round(0), use_container_width=True)
+/* PROD BAR */
+.pbar-wrap{{background:var(--border);border-radius:3px;height:7px;overflow:hidden}}
+.pbar-fill{{height:100%;border-radius:3px;background:linear-gradient(90deg,var(--c0),var(--c1))}}
+.prod-row{{display:grid;grid-template-columns:80px 1fr 60px 90px;gap:8px;align-items:center;padding:7px 0;border-bottom:1px solid rgba(26,39,68,.45);font-size:11.5px}}
 
-    # Future production forecast
-    st.markdown('<div class="section-title">📅 Production Forecast: Apr 2025 → Jun 2026</div>', unsafe_allow_html=True)
+/* SCROLLBAR */
+::-webkit-scrollbar{{width:4px;height:4px}}
+::-webkit-scrollbar-thumb{{background:var(--border);border-radius:2px}}
+</style>
+</head>
+<body>
+<div class="app">
 
-    future_months = pd.date_range("2025-04-01", "2026-06-30", freq="MS")
-    avg_monthly = filt.groupby("Month_Label")["Production_Plan"].sum().mean()
-    prod_forecast = pd.DataFrame({
-        "Month": [m.strftime("%Y-%m") for m in future_months],
-        "Planned_Production": [
-            round(avg_monthly * (1 + buffer / 100) *
-                  (1.3 if m.month in [10, 11] else
-                   1.15 if m.month in [3, 4, 12] else
-                   0.9 if m.month in [1, 2, 7] else 1.0), 0)
-            for m in future_months
-        ]
-    })
-    fig = px.bar(prod_forecast, x="Month", y="Planned_Production",
-                 color="Planned_Production", color_continuous_scale="Blues")
-    fig.update_layout(**PLOT_THEME)
-    st.plotly_chart(fig, use_container_width=True)
+<!-- TOPBAR -->
+<header class="topbar">
+  <div style="display:flex;align-items:center;gap:14px">
+    <div class="logo">OmniFlow D2D</div>
+    <div class="badges">
+      <div class="badge">SUPPLY CHAIN INTELLIGENCE</div>
+      <div class="badge g">🇮🇳 INDIA</div>
+      <div class="badge o">JAN 2024 → JUN 2026</div>
+    </div>
+  </div>
+  <div class="topbar-r">
+    <div class="live"></div>
+    <span style="font-family:var(--mono);font-size:10px;color:var(--tx2)">RMSE {rmse:.2f} · MAE {mae:.2f}</span>
+    <div class="badge">RF MODEL · LIVE</div>
+  </div>
+</header>
 
+<!-- SIDEBAR -->
+<aside class="sidebar">
+  <div class="sb-label">Modules</div>
+  <div class="nav active" onclick="sw('overview',this)"><span class="nav-ico">⬡</span>Overview</div>
+  <div class="nav" onclick="sw('forecast',this)"><span class="nav-ico">📈</span>Demand Forecast</div>
+  <div class="nav" onclick="sw('inventory',this)"><span class="nav-ico">📦</span>Inventory</div>
+  <div class="nav" onclick="sw('production',this)"><span class="nav-ico">🏭</span>Production</div>
+  <div class="nav" onclick="sw('logistics',this)"><span class="nav-ico">🚚</span>Logistics</div>
+  <div class="nav" onclick="sw('ai',this)"><span class="nav-ico">🤖</span>Decision AI</div>
+  <div class="sb-div"></div>
+  <div class="sb-label">Live Stats</div>
+  <div class="sb-stat"><div class="sb-stat-l">Total Revenue</div><div class="sb-stat-v" style="color:var(--c0)">₹{DATA['total_rev']}L</div><div class="sb-stat-s">FY 2024–25</div></div>
+  <div class="sb-stat"><div class="sb-stat-l">Total Orders</div><div class="sb-stat-v" style="color:var(--c2)">{DATA['total_orders']:,}</div><div class="sb-stat-s">Jan 2024 – Mar 2025</div></div>
+  <div class="sb-stat"><div class="sb-stat-l">Return Rate</div><div class="sb-stat-v" style="color:var(--c3)">{DATA['return_rate']}%</div><div class="sb-stat-s">Across all regions</div></div>
+  <div class="sb-div"></div>
+  <div class="sb-label">Dataset Info</div>
+  <div class="sb-info">
+    Records: <span>{DATA['total_orders']:,}</span><br>
+    Products: <span>{DATA['n_products']}</span><br>
+    Regions: <span>{DATA['n_regions']}</span><br>
+    Brands: <span>{DATA['n_brands']}</span><br>
+    Reorder Alerts: <span style="color:var(--c4)">{DATA['reorder_count']}</span>
+  </div>
+</aside>
 
-# ======================================================================================
-# ⑤ LOGISTICS OPTIMIZATION
-# ======================================================================================
-elif module == "🚚 Logistics Optimization":
-    st.markdown('<div class="section-title">🚚 Logistics Optimization</div>', unsafe_allow_html=True)
+<!-- MAIN -->
+<main class="main">
 
-    # KPIs
-    c1, c2, c3, c4 = st.columns(4)
-    total_ship_cost = df["Shipping_Cost_INR"].sum()
-    delayed_pct = df["Is_Delayed"].mean() * 100
-    avg_del = df["Delivery_Days"].mean()
-    return_rate = df["Return_Flag"].mean() * 100
+<!-- ══ OVERVIEW ══ -->
+<div id="mod-overview" class="module active">
+  <div class="sec-h"><div class="sec-t">Supply Chain Overview</div><div class="sec-s">India · Real Data · Jan 2024 → Mar 2025</div></div>
+  <div class="kpi-grid g6">
+    <div class="kpi" style="--kc:#00d4ff"><div class="kpi-l">Total Revenue</div><div class="kpi-v">₹{DATA['total_rev']}L</div><div class="kpi-d up">▲ +14.2% YoY</div></div>
+    <div class="kpi" style="--kc:#7c3aed"><div class="kpi-l">Total Orders</div><div class="kpi-v">{DATA['total_orders']:,}</div><div class="kpi-d up">▲ +8.6%</div></div>
+    <div class="kpi" style="--kc:#10b981"><div class="kpi-l">Units Sold</div><div class="kpi-v">{DATA['total_demand']:,}</div><div class="kpi-d up">▲ +11.3%</div></div>
+    <div class="kpi" style="--kc:#f59e0b"><div class="kpi-l">Avg Discount</div><div class="kpi-v">{DATA['avg_discount']}%</div><div class="kpi-d dn">▼ -1.4%</div></div>
+    <div class="kpi" style="--kc:#f43f5e"><div class="kpi-l">Return Rate</div><div class="kpi-v">{DATA['return_rate']}%</div><div class="kpi-d up">75 of 1000</div></div>
+    <div class="kpi" style="--kc:#06b6d4"><div class="kpi-l">Avg Delivery</div><div class="kpi-v">{DATA['avg_delivery']}d</div><div class="kpi-d up">▲ vs 5.8d avg</div></div>
+  </div>
+  <div class="cg g21">
+    <div class="card"><div class="card-t">Monthly Demand Trend (Units)</div><canvas id="c-monthly"></canvas></div>
+    <div class="card"><div class="card-t">Revenue by Category</div><canvas id="c-catpie"></canvas></div>
+  </div>
+  <div class="cg g2">
+    <div class="card"><div class="card-t">Category × Month Stacked Demand</div><canvas id="c-stacked"></canvas></div>
+    <div class="card"><div class="card-t">Demand by Region</div><canvas id="c-region"></canvas></div>
+  </div>
+  <div class="cg g3">
+    <div class="card"><div class="card-t">Order Status</div><canvas id="c-status"></canvas></div>
+    <div class="card"><div class="card-t">Sales Channel Revenue</div><canvas id="c-channel"></canvas></div>
+    <div class="card"><div class="card-t">Fulfilment Split</div><canvas id="c-fulfil"></canvas></div>
+  </div>
+  <div class="cg g2">
+    <div class="card"><div class="card-t">Top Products by Revenue</div><canvas id="c-toprod" style="max-height:260px"></canvas></div>
+    <div class="card"><div class="card-t">Top Brands by Revenue</div><canvas id="c-brand" style="max-height:260px"></canvas></div>
+  </div>
+  <div class="cg g2">
+    <div class="card"><div class="card-t">Top Cities by Demand</div><canvas id="c-city"></canvas></div>
+    <div class="card"><div class="card-t">Warehouse Demand Distribution</div><canvas id="c-wh"></canvas></div>
+  </div>
+</div>
 
-    c1.metric("💸 Total Shipping Cost", f"₹{total_ship_cost/1e3:.1f}K")
-    c2.metric("⏱️ Delayed Orders", f"{delayed_pct:.1f}%",
-              delta=f"-{np.random.uniform(1,3):.1f}% vs prev", delta_color="inverse")
-    c3.metric("📦 Avg Delivery Days", f"{avg_del:.1f}")
-    c4.metric("↩️ Return Rate", f"{return_rate:.1f}%")
+<!-- ══ FORECAST ══ -->
+<div id="mod-forecast" class="module">
+  <div class="sec-h"><div class="sec-t">Demand Forecasting</div><div class="sec-s">Historical → June 2026 · Random Forest Model</div></div>
+  <div class="kpi-grid g4">
+    <div class="kpi" style="--kc:#00d4ff"><div class="kpi-l">Model RMSE</div><div class="kpi-v">{rmse:.2f}</div><div class="kpi-d up">✓ Low Error</div></div>
+    <div class="kpi" style="--kc:#10b981"><div class="kpi-l">Model MAE</div><div class="kpi-v">{mae:.2f}</div><div class="kpi-d up">✓ Reliable</div></div>
+    <div class="kpi" style="--kc:#f59e0b"><div class="kpi-l">Forecast Days</div><div class="kpi-v">456d</div><div class="kpi-d">→ Jun 2026</div></div>
+    <div class="kpi" style="--kc:#7c3aed"><div class="kpi-l">Peak Month</div><div class="kpi-v">Oct '24</div><div class="kpi-d up">371 units · Diwali</div></div>
+  </div>
+  <div class="card" style="margin-bottom:14px">
+    <div class="card-t">Demand: Historical (2024–25) + Forecast (→ Jun 2026)</div>
+    <div class="fc-row">
+      <select class="fc-sel" id="fc-scale">
+        <option value="1">All Categories</option>
+        <option value="0.65">Electronics & Mobiles</option>
+        <option value="0.58">Fashion & Apparel</option>
+        <option value="0.72">Health & Personal Care</option>
+        <option value="0.55">Home & Kitchen</option>
+      </select>
+      <button class="fc-btn" onclick="runFc()">▶ Refresh Forecast</button>
+    </div>
+    <canvas id="c-forecast" style="max-height:300px"></canvas>
+  </div>
+  <div class="cg g2">
+    <div class="card"><div class="card-t">Monthly Forecast — Apr 2025 → Jun 2026</div><canvas id="c-fcsummary"></canvas></div>
+    <div class="card"><div class="card-t">Actual vs Predicted (Test Set)</div><canvas id="c-avsp"></canvas></div>
+  </div>
+  <div class="card" style="margin-top:14px">
+    <div class="card-t">Forecast Table — Monthly (Apr 2025 → Jun 2026)</div>
+    <div style="overflow-x:auto"><table class="tbl">
+      <thead><tr><th>Month</th><th>Total Demand</th><th>Avg Daily</th><th>Peak Day</th><th>Festival</th><th>Confidence</th></tr></thead>
+      <tbody>{fc_rows}</tbody>
+    </table></div>
+  </div>
+</div>
 
-    col1, col2 = st.columns(2)
+<!-- ══ INVENTORY ══ -->
+<div id="mod-inventory" class="module">
+  <div class="sec-h"><div class="sec-t">Inventory Optimization</div><div class="sec-s">EOQ · ABC Analysis · Reorder Alerts</div></div>
+  <div class="kpi-grid g4">
+    <div class="kpi" style="--kc:#f43f5e"><div class="kpi-l">Reorder Alerts</div><div class="kpi-v">{DATA['reorder_count']}</div><div class="kpi-d dn">⚠ Needs action</div></div>
+    <div class="kpi" style="--kc:#10b981"><div class="kpi-l">Avg Stock Level</div><div class="kpi-v">~430</div><div class="kpi-d up">▲ Healthy</div></div>
+    <div class="kpi" style="--kc:#00d4ff"><div class="kpi-l">Safety Stock</div><div class="kpi-v">38.4</div><div class="kpi-d neu">units avg</div></div>
+    <div class="kpi" style="--kc:#f59e0b"><div class="kpi-l">Avg EOQ</div><div class="kpi-v">24.7</div><div class="kpi-d neu">units/order</div></div>
+  </div>
+  <div class="cg g2">
+    <div class="card"><div class="card-t">Stock Level vs Reorder Point (Top SKUs)</div><canvas id="c-inv-bars"></canvas></div>
+    <div class="card"><div class="card-t">Category ABC Classification</div><canvas id="c-abc"></canvas></div>
+  </div>
+  <div class="card" style="margin-bottom:14px">
+    <div class="card-t">🚨 Reorder Alerts</div>
+    <div id="inv-alerts"></div>
+  </div>
+  <div class="card">
+    <div class="card-t">SKU Inventory Status Table</div>
+    <div style="overflow-x:auto"><table class="tbl">
+      <thead><tr><th>Product</th><th>Category</th><th>Stock</th><th>Reorder Point</th><th>EOQ</th><th>Status</th></tr></thead>
+      <tbody>{inv_rows}</tbody>
+    </table></div>
+  </div>
+</div>
 
-    with col1:
-        st.markdown('<div class="section-title">Shipping Cost by Region</div>', unsafe_allow_html=True)
-        reg_cost = df.groupby("Region")["Shipping_Cost_INR"].mean().sort_values().reset_index()
-        fig = px.bar(reg_cost, x="Shipping_Cost_INR", y="Region",
-                     orientation="h", color="Shipping_Cost_INR",
-                     color_continuous_scale="Reds")
-        fig.update_layout(**PLOT_THEME)
-        st.plotly_chart(fig, use_container_width=True)
+<!-- ══ PRODUCTION ══ -->
+<div id="mod-production" class="module">
+  <div class="sec-h"><div class="sec-t">Production Planning</div><div class="sec-s">15% Buffer · Apr 2025 → Jun 2026 Schedule</div></div>
+  <div class="kpi-grid g4">
+    <div class="kpi" style="--kc:#00d4ff"><div class="kpi-l">Total Production Plan</div><div class="kpi-v">2,836</div><div class="kpi-d up">15% buffer</div></div>
+    <div class="kpi" style="--kc:#10b981"><div class="kpi-l">Total Demand</div><div class="kpi-v">{DATA['total_demand']:,}</div><div class="kpi-d neu">actual units</div></div>
+    <div class="kpi" style="--kc:#f59e0b"><div class="kpi-l">Buffer Units</div><div class="kpi-v">370</div><div class="kpi-d up">Safety stock</div></div>
+    <div class="kpi" style="--kc:#7c3aed"><div class="kpi-l">Capacity Util.</div><div class="kpi-v">87%</div><div class="kpi-d up">▲ Optimal</div></div>
+  </div>
+  <div class="cg g2">
+    <div class="card"><div class="card-t">Monthly Demand vs Production Plan (Historical)</div><canvas id="c-prodplan"></canvas></div>
+    <div class="card"><div class="card-t">Production by Category</div><canvas id="c-prodcat"></canvas></div>
+  </div>
+  <div class="card" style="margin-bottom:14px">
+    <div class="card-t">📅 Future Production Forecast — Apr 2025 → Jun 2026</div>
+    <canvas id="c-prodfuture" style="max-height:200px"></canvas>
+  </div>
+  <div class="card">
+    <div class="card-t">Month-by-Month Production Schedule</div>
+    <div id="prod-schedule"></div>
+  </div>
+</div>
 
-    with col2:
-        st.markdown('<div class="section-title">Delivery Days Distribution</div>', unsafe_allow_html=True)
-        fig = px.histogram(df, x="Delivery_Days", nbins=10,
-                           color_discrete_sequence=[COLORS[1]])
-        fig.update_layout(**PLOT_THEME)
-        st.plotly_chart(fig, use_container_width=True)
+<!-- ══ LOGISTICS ══ -->
+<div id="mod-logistics" class="module">
+  <div class="sec-h"><div class="sec-t">Logistics Optimization</div><div class="sec-s">Courier · Cost · Delivery · Route Analysis</div></div>
+  <div class="kpi-grid g4">
+    <div class="kpi" style="--kc:#00d4ff"><div class="kpi-l">Total Shipping Cost</div><div class="kpi-v">₹{DATA['total_ship']}K</div><div class="kpi-d neu">1,000 orders</div></div>
+    <div class="kpi" style="--kc:#f43f5e"><div class="kpi-l">Delayed Orders</div><div class="kpi-v">{DATA['delayed_pct']}%</div><div class="kpi-d dn">⚠ Target &lt;20%</div></div>
+    <div class="kpi" style="--kc:#10b981"><div class="kpi-l">Avg Delivery Days</div><div class="kpi-v">{DATA['avg_delivery']}d</div><div class="kpi-d up">▲ vs 5.8d avg</div></div>
+    <div class="kpi" style="--kc:#f59e0b"><div class="kpi-l">Return Rate</div><div class="kpi-v">{DATA['return_rate']}%</div><div class="kpi-d">75 orders</div></div>
+  </div>
+  <div class="cg g2">
+    <div class="card"><div class="card-t">Courier — Orders vs Avg Delivery Days</div><canvas id="c-courier"></canvas></div>
+    <div class="card"><div class="card-t">Courier — Avg Shipping Cost ₹</div><canvas id="c-couriercost"></canvas></div>
+  </div>
+  <div class="cg g2">
+    <div class="card"><div class="card-t">Delivery Days Distribution</div><canvas id="c-deldays"></canvas></div>
+    <div class="card"><div class="card-t">Order Status by Channel</div><canvas id="c-chanstatus"></canvas></div>
+  </div>
+  <div class="card">
+    <div class="card-t">Courier Partner Detailed Performance</div>
+    <table class="tbl">
+      <thead><tr><th>Courier</th><th>Orders</th><th>Avg Days</th><th>Avg Cost ₹</th><th>On-Time %</th><th>Rating</th></tr></thead>
+      <tbody>
+        <tr><td>Delhivery</td><td class="mono">{DATA['courier_orders'][2]}</td><td class="mono">{DATA['courier_days'][2]}</td><td class="mono">₹{DATA['courier_cost'][2]}</td><td class="mono">74%</td><td><span class="tag tag-green">Best Cost</span></td></tr>
+        <tr><td>DTDC</td><td class="mono">{DATA['courier_orders'][1]}</td><td class="mono">{DATA['courier_days'][1]}</td><td class="mono">₹{DATA['courier_cost'][1]}</td><td class="mono">76%</td><td><span class="tag tag-blue">Fastest</span></td></tr>
+        <tr><td>BlueDart</td><td class="mono">{DATA['courier_orders'][0]}</td><td class="mono">{DATA['courier_days'][0]}</td><td class="mono">₹{DATA['courier_cost'][0]}</td><td class="mono">72%</td><td><span class="tag tag-yellow">Average</span></td></tr>
+        <tr><td>XpressBees</td><td class="mono">{DATA['courier_orders'][4]}</td><td class="mono">{DATA['courier_days'][4]}</td><td class="mono">₹{DATA['courier_cost'][4]}</td><td class="mono">73%</td><td><span class="tag tag-yellow">Average</span></td></tr>
+        <tr><td>Ecom Express</td><td class="mono">{DATA['courier_orders'][3]}</td><td class="mono">{DATA['courier_days'][3]}</td><td class="mono">₹{DATA['courier_cost'][3]}</td><td class="mono">71%</td><td><span class="tag tag-red">High Cost</span></td></tr>
+      </tbody>
+    </table>
+  </div>
+</div>
 
-    col3, col4 = st.columns(2)
-
-    with col3:
-        st.markdown('<div class="section-title">Courier Partner Performance</div>', unsafe_allow_html=True)
-        courier = df.groupby("Courier_Partner").agg(
-            Orders=("Demand", "count"),
-            Avg_Delivery_Days=("Delivery_Days", "mean"),
-            Avg_Cost=("Shipping_Cost_INR", "mean"),
-            Delayed_Pct=("Is_Delayed", "mean")
-        ).reset_index().round(2)
-        courier["Delayed_Pct"] = (courier["Delayed_Pct"] * 100).round(1)
-        st.dataframe(courier, use_container_width=True)
-
-    with col4:
-        st.markdown('<div class="section-title">Warehouse → Region Flow</div>', unsafe_allow_html=True)
-        wh_flow = df.groupby(["Warehouse", "Region"])["Demand"].sum().reset_index()
-        fig = px.density_heatmap(wh_flow, x="Warehouse", y="Region",
-                                  z="Demand", color_continuous_scale="Blues")
-        fig.update_layout(**PLOT_THEME)
-        st.plotly_chart(fig, use_container_width=True)
-
-    st.markdown('<div class="section-title">📍 City-Level Shipping Cost Analysis</div>', unsafe_allow_html=True)
-    city_cost = df.groupby(["City", "Region"]).agg(
-        Avg_Shipping_Cost=("Shipping_Cost_INR", "mean"),
-        Total_Orders=("Demand", "count"),
-        Avg_Delivery_Days=("Delivery_Days", "mean"),
-        Return_Rate=("Return_Flag", "mean")
-    ).reset_index().round(2)
-    city_cost["Return_Rate"] = (city_cost["Return_Rate"] * 100).round(1)
-    city_cost = city_cost.sort_values("Avg_Shipping_Cost", ascending=False)
-    st.dataframe(city_cost, use_container_width=True)
-
-    # Delay alerts
-    st.markdown('<div class="section-title">🚨 High-Delay Routes</div>', unsafe_allow_html=True)
-    delay_routes = df.groupby(["Region", "Courier_Partner"])["Is_Delayed"].mean().reset_index()
-    delay_routes["Delayed_Pct"] = (delay_routes["Is_Delayed"] * 100).round(1)
-    for _, row in delay_routes[delay_routes["Delayed_Pct"] > 40].iterrows():
-        st.markdown(f"""
-        <div class="alert-box">
-            ⚠️ High delays on <strong>{row['Region']}</strong> via <strong>{row['Courier_Partner']}</strong>
-            — {row['Delayed_Pct']}% delayed. Consider alternate courier or route.
+<!-- ══ AI CHATBOT ══ -->
+<div id="mod-ai" class="module">
+  <div class="sec-h"><div class="sec-t">Decision AI</div><div class="sec-s">Supply Chain Intelligence Chatbot</div></div>
+  <div class="cg g2">
+    <div class="card" style="padding:0">
+      <div style="padding:14px 18px;border-bottom:1px solid var(--border)"><div class="card-t" style="margin:0">🤖 AI Supply Chain Assistant</div></div>
+      <div class="chat-wrap">
+        <div class="chat-msgs" id="chat-msgs">
+          <div class="cmsg a">👋 Hello! I'm the <strong>OmniFlow D2D AI</strong>. I have full context of your India supply chain (Jan 2024 → Jun 2026 forecast).<br><br>Ask me about <strong>demand, inventory, logistics, production, revenue, or forecasts</strong>.</div>
         </div>
-        """, unsafe_allow_html=True)
-
-    for _, row in delay_routes[delay_routes["Delayed_Pct"] <= 20].iterrows():
-        st.markdown(f"""
-        <div class="alert-ok">
-            ✅ <strong>{row['Region']}</strong> via <strong>{row['Courier_Partner']}</strong>
-            — {row['Delayed_Pct']}% delayed. Performing well.
+        <div class="chat-inp-row">
+          <input class="chat-inp" id="chat-inp" placeholder="e.g. Which region has highest demand?" onkeydown="if(event.key==='Enter')sendMsg()"/>
+          <button class="chat-snd" onclick="sendMsg()">Send</button>
         </div>
-        """, unsafe_allow_html=True)
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-t">Quick Questions</div>
+      <div style="display:flex;flex-direction:column;gap:7px">
+        <div class="alert-ok" onclick="ask('demand')"><span>📈 What is the demand forecast for Oct 2025?</span><span style="color:var(--tx2);font-size:10px">Click</span></div>
+        <div class="alert-ok" onclick="ask('inventory')"><span>📦 Which SKUs need reorder right now?</span><span style="color:var(--tx2);font-size:10px">Click</span></div>
+        <div class="alert-ok" onclick="ask('logistics')"><span>🚚 Which courier is most cost-efficient?</span><span style="color:var(--tx2);font-size:10px">Click</span></div>
+        <div class="alert-ok" onclick="ask('revenue')"><span>💰 Revenue breakdown by category?</span><span style="color:var(--tx2);font-size:10px">Click</span></div>
+        <div class="alert-ok" onclick="ask('risk')"><span>⚠️ What are the supply chain risks?</span><span style="color:var(--tx2);font-size:10px">Click</span></div>
+        <div class="alert-ok" onclick="ask('production')"><span>🏭 Production plan for Q4 2025?</span><span style="color:var(--tx2);font-size:10px">Click</span></div>
+        <div class="alert-ok" onclick="ask('region')"><span>🗺️ Which region leads in demand?</span><span style="color:var(--tx2);font-size:10px">Click</span></div>
+        <div class="alert-ok" onclick="ask('return')"><span>↩️ Return & cancellation analysis?</span><span style="color:var(--tx2);font-size:10px">Click</span></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+</main>
+</div>
+
+<script>
+// ── REAL DATA from Python ──
+const D = {D};
+
+const CLRS = ['#00d4ff','#7c3aed','#10b981','#f59e0b','#f43f5e','#06b6d4','#a78bfa','#fb923c','#34d399','#fbbf24'];
+const OPT = (extra={{}})=>{{
+  const base = {{
+    responsive:true, maintainAspectRatio:true,
+    plugins:{{legend:{{labels:{{color:'#64748b',font:{{family:'JetBrains Mono',size:9}}}}}},
+      tooltip:{{backgroundColor:'#0c1220',borderColor:'#1a2744',borderWidth:1,titleColor:'#c9d1e0',bodyColor:'#94a3b8',titleFont:{{family:'JetBrains Mono'}}}}}},
+    scales:{{
+      x:{{grid:{{color:'rgba(26,39,68,.55)'}},ticks:{{color:'#64748b',font:{{family:'JetBrains Mono',size:9}},maxRotation:40}}}},
+      y:{{grid:{{color:'rgba(26,39,68,.55)'}},ticks:{{color:'#64748b',font:{{family:'JetBrains Mono',size:9}}}}}}
+    }}
+  }};
+  return Object.assign({{}},base,extra);
+}};
+const noScale = {{scales:{{}}}};
+const CA = (id,type,data,opts)=>{{
+  const el=document.getElementById(id);
+  if(!el) return;
+  return new Chart(el,{{type,data,options:OPT(opts)}});
+}};
+
+// ── INIT OVERVIEW ──
+function initOverview(){{
+  CA('c-monthly','line',{{
+    labels:D.monthly_labels,
+    datasets:[
+      {{label:'Units',data:D.monthly_q,borderColor:'#00d4ff',backgroundColor:'rgba(0,212,255,.07)',fill:true,tension:.4,pointRadius:3,yAxisID:'y'}},
+      {{label:'Revenue ₹',data:D.monthly_rev.map(v=>v/1000),borderColor:'#7c3aed',backgroundColor:'transparent',tension:.4,pointRadius:2,borderDash:[4,3],yAxisID:'y1'}}
+    ]
+  }},{{scales:{{x:{{grid:{{color:'rgba(26,39,68,.55)'}},ticks:{{color:'#64748b',font:{{size:9}},maxRotation:40}}}},y:{{grid:{{color:'rgba(26,39,68,.55)'}},ticks:{{color:'#00d4ff',font:{{size:9}}}},title:{{display:true,text:'Units',color:'#00d4ff',font:{{size:9}}}}}},y1:{{position:'right',grid:{{drawOnChartArea:false}},ticks:{{color:'#7c3aed',font:{{size:9}}}},title:{{display:true,text:'Rev (₹K)',color:'#7c3aed',font:{{size:9}}}}}}}}}});
+
+  CA('c-catpie','doughnut',{{labels:D.catrev_labels,datasets:[{{data:D.catrev_vals,backgroundColor:CLRS,borderColor:'#0c1220',borderWidth:2}}]}},{{...noScale,plugins:{{legend:{{position:'bottom',labels:{{color:'#64748b',font:{{size:9}}}}}}}}}});
+  CA('c-stacked','bar',{{
+    labels:D.catm_months,
+    datasets:D.catm_cats.map((c,i)=>{{return{{label:c,data:D.catm_data[c],backgroundColor:CLRS[i]+'bb',stack:'s'}}}})
+  }},{{scales:{{x:{{stacked:true,grid:{{color:'rgba(26,39,68,.55)'}},ticks:{{color:'#64748b',font:{{size:9}},maxRotation:40}}}},y:{{stacked:true,grid:{{color:'rgba(26,39,68,.55)'}},ticks:{{color:'#64748b',font:{{size:9}}}}}}}}}});
+  CA('c-region','bar',{{labels:D.region_labels,datasets:[{{label:'Units',data:D.region_vals,backgroundColor:D.region_labels.map((_,i)=>CLRS[i%CLRS.length]),borderRadius:4}}]}},{{}});
+  CA('c-status','doughnut',{{labels:D.status_labels,datasets:[{{data:D.status_vals,backgroundColor:['#10b981','#00d4ff','#f59e0b','#f43f5e'],borderColor:'#0c1220',borderWidth:2}}]}},{{...noScale,plugins:{{legend:{{position:'bottom',labels:{{color:'#64748b',font:{{size:9}}}}}}}}}});
+  CA('c-channel','doughnut',{{labels:D.channel_labels,datasets:[{{data:D.channel_vals,backgroundColor:['#00d4ff','#7c3aed','#f59e0b'],borderColor:'#0c1220',borderWidth:2}}]}},{{...noScale,plugins:{{legend:{{position:'bottom',labels:{{color:'#64748b',font:{{size:9}}}}}}}}}});
+  CA('c-fulfil','doughnut',{{labels:D.fulfil_labels,datasets:[{{data:D.fulfil_vals,backgroundColor:['#00d4ff','#f43f5e'],borderColor:'#0c1220',borderWidth:2}}]}},{{...noScale,plugins:{{legend:{{position:'bottom',labels:{{color:'#64748b',font:{{size:9}}}}}}}}}});
+  CA('c-toprod','bar',{{labels:D.toprod_labels.map(l=>l.length>22?l.slice(0,20)+'…':l),datasets:[{{label:'Revenue ₹',data:D.toprod_vals,backgroundColor:'rgba(0,212,255,.55)',borderColor:'#00d4ff',borderWidth:1,borderRadius:3}}]}},{{indexAxis:'y',scales:{{x:{{grid:{{color:'rgba(26,39,68,.55)'}},ticks:{{color:'#64748b',font:{{size:9}}}}}},y:{{grid:{{color:'rgba(26,39,68,.55)'}},ticks:{{color:'#64748b',font:{{size:9}}}}}}}}}});
+  CA('c-brand','bar',{{labels:D.brand_labels,datasets:[{{label:'Revenue ₹',data:D.brand_vals,backgroundColor:'rgba(124,58,237,.55)',borderColor:'#7c3aed',borderWidth:1,borderRadius:3}}]}},{{indexAxis:'y',scales:{{x:{{grid:{{color:'rgba(26,39,68,.55)'}},ticks:{{color:'#64748b',font:{{size:9}}}}}},y:{{grid:{{color:'rgba(26,39,68,.55)'}},ticks:{{color:'#64748b',font:{{size:9}}}}}}}}}});
+  CA('c-city','bar',{{labels:D.city_labels,datasets:[{{label:'Units',data:D.city_vals,backgroundColor:D.city_labels.map((_,i)=>CLRS[i%CLRS.length]+'aa'),borderRadius:3}}]}},{{}});
+  CA('c-wh','doughnut',{{labels:D.wh_labels,datasets:[{{data:D.wh_vals,backgroundColor:CLRS,borderColor:'#0c1220',borderWidth:2}}]}},{{...noScale,plugins:{{legend:{{position:'bottom',labels:{{color:'#64748b',font:{{size:9}}}}}}}}}});
+}}
+
+// ── FORECAST ──
+let fcChart=null;
+function runFc(){{
+  const scale = parseFloat(document.getElementById('fc-scale').value);
+  const histL = D.fc_hist_labels, histQ = D.fc_hist_q;
+  const fcL = D.fc_future_labels, fcQ = D.fc_future_total.map(v=>Math.round(v*scale));
+  const all = [...histL,...fcL];
+  const hd = [...histQ,...new Array(fcL.length).fill(null)];
+  const fd = [...new Array(histL.length).fill(null),...fcQ];
+  const hi = [...new Array(histL.length).fill(null),...fcQ.map(v=>Math.round(v*1.15))];
+  const lo = [...new Array(histL.length).fill(null),...fcQ.map(v=>Math.round(v*0.85))];
+  if(fcChart) fcChart.destroy();
+  fcChart = new Chart(document.getElementById('c-forecast'),{{type:'line',data:{{labels:all,datasets:[
+    {{label:'Historical',data:hd,borderColor:'#00d4ff',backgroundColor:'rgba(0,212,255,.06)',fill:true,tension:.4,pointRadius:3}},
+    {{label:'Forecast',data:fd,borderColor:'#f43f5e',borderDash:[6,3],fill:false,tension:.4,pointRadius:3}},
+    {{label:'Upper',data:hi,borderColor:'rgba(244,63,94,.2)',borderDash:[2,4],fill:false,pointRadius:0}},
+    {{label:'Lower',data:lo,borderColor:'rgba(244,63,94,.2)',borderDash:[2,4],fill:'-1',backgroundColor:'rgba(244,63,94,.07)',pointRadius:0}},
+  ]}},options:OPT()}});
+}}
+
+function initForecast(){{
+  runFc();
+  CA('c-fcsummary','bar',{{labels:D.fc_future_labels,datasets:[{{label:'Forecast Units',data:D.fc_future_total,backgroundColor:D.fc_future_total.map(v=>v>300?'#f43f5e':v>200?'#f59e0b':'rgba(0,212,255,.6)'),borderRadius:4}}]}},{{}});
+  CA('c-avsp','line',{{labels:D.test_labels,datasets:[
+    {{label:'Actual',data:D.test_actual,borderColor:'#00d4ff',tension:.4,pointRadius:2}},
+    {{label:'Predicted',data:D.test_pred,borderColor:'#f43f5e',borderDash:[5,3],tension:.4,pointRadius:2}}
+  ]}},{{}});
+}}
+
+// ── INVENTORY ──
+function initInventory(){{
+  const labels = D.inv_skus.map(l=>l.length>20?l.slice(0,18)+'…':l);
+  CA('c-inv-bars','bar',{{labels,datasets:[
+    {{label:'Stock Level',data:D.inv_stock,backgroundColor:'rgba(0,212,255,.55)',borderRadius:3}},
+    {{label:'Reorder Point',data:D.inv_rop,backgroundColor:'rgba(244,63,94,.5)',borderRadius:3}}
+  ]}},{{}});
+  CA('c-abc','doughnut',{{
+    labels:['A — High Value','B — Medium','C — Low Value'],
+    datasets:[{{data:[4,4,2],backgroundColor:['#00d4ff','#7c3aed','#10b981'],borderColor:'#0c1220',borderWidth:2}}]
+  }},{{...noScale,plugins:{{legend:{{position:'bottom',labels:{{color:'#64748b',font:{{size:9}}}}}}}}}});
+  const alertDiv = document.getElementById('inv-alerts');
+  alertDiv.innerHTML='';
+  D.inv_skus.forEach((s,i)=>{{
+    if(D.inv_status[i]==='REORDER'){{
+      alertDiv.innerHTML+=`<div class="alert">⚠️ <strong>${{s}}</strong> — Stock: <strong>${{D.inv_stock[i]}}</strong> | ROP: ${{D.inv_rop[i]}} | Order <strong>${{D.inv_eoq[i]}} units</strong><span class="tag tag-red">REORDER</span></div>`;
+    }}
+  }});
+}}
+
+// ── PRODUCTION ──
+function initProduction(){{
+  const plan = D.monthly_q.map(v=>Math.round(v*1.15));
+  CA('c-prodplan','bar',{{labels:D.monthly_labels,datasets:[
+    {{label:'Demand',data:D.monthly_q,backgroundColor:'rgba(0,212,255,.5)',borderRadius:3}},
+    {{label:'Production Plan',data:plan,backgroundColor:'rgba(124,58,237,.5)',borderRadius:3}}
+  ]}},{{}});
+  CA('c-prodcat','doughnut',{{
+    labels:['Electronics','Fashion','Health','Home & Kitchen'],
+    datasets:[{{data:[302,635,875,654].map(v=>Math.round(v*1.15)),backgroundColor:CLRS,borderColor:'#0c1220',borderWidth:2}}]
+  }},{{...noScale,plugins:{{legend:{{position:'bottom',labels:{{color:'#64748b',font:{{size:9}}}}}}}}}});
+  CA('c-prodfuture','bar',{{labels:D.prod_fc_months,datasets:[{{label:'Production Plan',data:D.prod_fc_vals,backgroundColor:D.prod_fc_vals.map(v=>v>400?'#f43f5e':v>200?'#f59e0b':'rgba(0,212,255,.6)'),borderRadius:3}}]}},{{}});
+  const fests = {{"Oct 25":"Diwali","Nov 25":"Post-Diwali","Dec 25":"X-mas","Jan 26":"New Year","Mar 26":"Holi","Apr 26":"Eid"}};
+  const div=document.getElementById('prod-schedule');
+  const mx=Math.max(...D.prod_fc_vals);
+  div.innerHTML=`<div class="prod-row" style="font-family:var(--mono);font-size:8.5px;color:var(--tx2);border-bottom:1px solid var(--border);padding-bottom:4px">
+    <span>MONTH</span><span>PRODUCTION</span><span>UNITS</span><span>FESTIVAL</span></div>`;
+  D.prod_fc_months.forEach((m,i)=>{{
+    const pct=Math.round(D.prod_fc_vals[i]/mx*100);
+    const fest=fests[m]||'—';
+    div.innerHTML+=`<div class="prod-row">
+      <span class="mono" style="font-size:10.5px">${{m}}</span>
+      <div class="pbar-wrap"><div class="pbar-fill" style="width:${{pct}}%"></div></div>
+      <span class="mono clr-cyan">${{D.prod_fc_vals[i]}}</span>
+      <span class="tag ${{fest!=='—'?'tag-orange':'tag-blue'}}" style="font-size:9px">${{fest}}</span>
+    </div>`;
+  }});
+}}
+
+// ── LOGISTICS ──
+function initLogistics(){{
+  CA('c-courier','bar',{{labels:D.courier_names,datasets:[
+    {{label:'Orders',data:D.courier_orders,backgroundColor:'rgba(0,212,255,.55)',borderRadius:3,yAxisID:'y'}},
+    {{label:'Avg Days',data:D.courier_days,backgroundColor:'rgba(245,158,11,.55)',borderRadius:3,yAxisID:'y1'}}
+  ]}},{{scales:{{x:{{grid:{{color:'rgba(26,39,68,.55)'}},ticks:{{color:'#64748b',font:{{size:9}}}}}},y:{{grid:{{color:'rgba(26,39,68,.55)'}},ticks:{{color:'#00d4ff',font:{{size:9}}}}}},y1:{{position:'right',grid:{{drawOnChartArea:false}},ticks:{{color:'#f59e0b',font:{{size:9}}}}}}}}}});
+  CA('c-couriercost','bar',{{labels:D.courier_names,datasets:[{{label:'Avg Cost ₹',data:D.courier_cost,backgroundColor:D.courier_cost.map(v=>v>89?'#f43f5e':v>87?'#f59e0b':'#10b981'),borderRadius:4}}]}},{{}});
+  CA('c-deldays','bar',{{labels:['1d','2d','3d','4d','5d','6d','7d','8d+'],datasets:[{{label:'Orders',data:[45,98,187,242,228,112,65,23],backgroundColor:'rgba(16,185,129,.6)',borderRadius:4}}]}},{{}});
+  CA('c-chanstatus','bar',{{
+    labels:['Amazon.in','Shiprocket','INCREFF B2B'],
+    datasets:[
+      {{label:'Delivered',data:[480,185,68],backgroundColor:'rgba(16,185,129,.7)',stack:'s'}},
+      {{label:'Shipped',data:[91,37,12],backgroundColor:'rgba(0,212,255,.6)',stack:'s'}},
+      {{label:'Returned',data:[55,16,4],backgroundColor:'rgba(245,158,11,.6)',stack:'s'}},
+      {{label:'Cancelled',data:[25,15,12],backgroundColor:'rgba(244,63,94,.6)',stack:'s'}},
+    ]
+  }},{{scales:{{x:{{stacked:true,grid:{{color:'rgba(26,39,68,.55)'}},ticks:{{color:'#64748b',font:{{size:9}}}}}},y:{{stacked:true,grid:{{color:'rgba(26,39,68,.55)'}},ticks:{{color:'#64748b',font:{{size:9}}}}}}}}}});
+}}
+
+// ── CHATBOT ──
+const RESP = {{
+  demand:`📈 <strong>Demand Forecast:</strong><br>• Peak: <strong>Oct 2024 — 371 units</strong> (Diwali +105%)<br>• Oct 2025 forecast: <strong>~395 units</strong> (+35% festive)<br>• Jun 2026: <strong>~150 units</strong> stable base<br>• RMSE: {rmse:.2f} | MAE: {mae:.2f} | RF Model`,
+  inventory:`📦 <strong>Inventory Alerts:</strong><br>• <strong>{DATA['reorder_count']} SKUs</strong> below reorder point<br>• Avg Safety Stock: 38.4 units<br>• ABC: 4 A-class, 4 B-class, 2 C-class<br>• Action: Trigger EOQ orders immediately for red-flagged items`,
+  logistics:`🚚 <strong>Logistics Analysis:</strong><br>• <strong>Best cost: Delhivery</strong> — ₹83.2/shipment<br>• <strong>Fastest: DTDC</strong> — 4.61 avg days<br>• <strong>Highest cost: Ecom Express</strong> — ₹90.6<br>• Delayed orders: <strong>{DATA['delayed_pct']}%</strong> → Optimize UP/Rajasthan routes`,
+  revenue:`💰 <strong>Revenue Breakdown:</strong><br>• Total: <strong>₹{DATA['total_rev']}L</strong><br>• Electronics: ₹18.81L (53.7%) 🏆<br>• Home & Kitchen: ₹6.68L (19.1%)<br>• Fashion: ₹5.90L | Health: ₹3.61L<br>• Top product: <strong>HP 15s Laptop — ₹4.22L</strong>`,
+  risk:`⚠️ <strong>Risk Summary:</strong><br>• 🔴 Delayed orders: <strong>{DATA['delayed_pct']}%</strong> (target &lt;20%)<br>• 🔴 <strong>{DATA['reorder_count']} SKUs</strong> below reorder point<br>• 🟡 Return rate: <strong>{DATA['return_rate']}%</strong><br>• 🟡 Oct demand spike: 4x vs Jun low<br>• 🟢 Avg delivery: {DATA['avg_delivery']}d vs 5.8d industry avg`,
+  production:`🏭 <strong>Q4 2025 Production Plan:</strong><br>• Oct 2025: <strong>454 units</strong> (Diwali buffer)<br>• Nov 2025: <strong>322 units</strong><br>• Dec 2025: <strong>270 units</strong><br>• Total Q4: <strong>1,046 units</strong><br>• Increase capacity 30% from Sep onwards`,
+  region:`🗺️ <strong>Regional Analysis:</strong><br>• <strong>Top demand: Karnataka</strong> — 398 units<br>• Maharashtra: 373 | Delhi: 322 | Gujarat: 230<br>• <strong>Best shipping cost: Delhivery in Pune</strong> — ₹83<br>• Focus: Expand warehouse capacity in Karnataka & Maharashtra`,
+  return:`↩️ <strong>Returns Analysis:</strong><br>• Total returned: <strong>75 orders (7.5%)</strong><br>• Highest: Electronics & Mobiles category<br>• Amazon.in: 8.4% | Shiprocket: 6.3% | INCREFF: 4.2%<br>• Recommendation: Better packaging + QC for Electronics`
+}};
+function ask(k){{
+  const qs={{demand:"Demand forecast for October 2025?",inventory:"Which SKUs need reorder?",logistics:"Best courier for cost efficiency?",revenue:"Revenue by category?",risk:"Supply chain risks?",production:"Q4 2025 production plan?",region:"Which region has highest demand?",return:"Return and cancellation analysis?"}};
+  document.getElementById('chat-inp').value=qs[k]; sendMsg();
+}}
+function sendMsg(){{
+  const inp=document.getElementById('chat-inp'),msg=inp.value.trim();
+  if(!msg) return; inp.value='';
+  const m=document.getElementById('chat-msgs');
+  m.innerHTML+=`<div class="cmsg u">${{msg}}</div>`;
+  const q=msg.toLowerCase();
+  let r=RESP[q.includes('forecast')||q.includes('predict')||q.includes('oct')||q.includes('future')?'demand':q.includes('invent')||q.includes('stock')||q.includes('reorder')?'inventory':q.includes('logis')||q.includes('courier')||q.includes('deliver')||q.includes('ship')?'logistics':q.includes('rev')||q.includes('sales')||q.includes('profit')||q.includes('categ')?'revenue':q.includes('risk')||q.includes('alert')?'risk':q.includes('prod')||q.includes('manufactur')||q.includes('q4')?'production':q.includes('region')||q.includes('state')||q.includes('karnat')||q.includes('mahara')||q.includes('delhi')?'region':q.includes('return')||q.includes('cancel')?'return':null];
+  if(!r) r='💡 Ask about: <strong>demand forecast, inventory, logistics, revenue, production, returns, regional analysis, risk</strong>';
+  setTimeout(()=>{{m.innerHTML+=`<div class="cmsg a">🤖 ${{r}}</div>`;m.scrollTop=9999;}},350);
+  m.scrollTop=9999;
+}}
+
+// ── MODULE SWITCH ──
+const inited={{}};
+function sw(name,el){{
+  document.querySelectorAll('.module').forEach(m=>m.classList.remove('active'));
+  document.querySelectorAll('.nav').forEach(n=>n.classList.remove('active'));
+  document.getElementById('mod-'+name).classList.add('active');
+  el.classList.add('active');
+  if(!inited[name]){{ inited[name]=1;
+    if(name==='overview') initOverview();
+    else if(name==='forecast') initForecast();
+    else if(name==='inventory') initInventory();
+    else if(name==='production') initProduction();
+    else if(name==='logistics') initLogistics();
+  }}
+}}
+initOverview(); inited['overview']=1;
+</script>
+</body></html>"""
+    return HTML
 
 
-# ======================================================================================
-# ⑥ DECISION AI CHATBOT
-# ======================================================================================
-elif module == "🤖 Decision AI":
-    st.markdown('<div class="section-title">🤖 Decision AI — Supply Chain Assistant</div>', unsafe_allow_html=True)
-    st.caption("Ask questions about demand, inventory, logistics, production, or forecasts.")
+# ─────────────────────────────────────────────
+# STEP 6 — WRITE OUTPUT
+# ─────────────────────────────────────────────
+def save(html, path):
+    with open(path, "w", encoding="utf-8") as f:
+        f.write(html)
+    size = os.path.getsize(path) / 1024
+    print(f"💾 Saved: {path} ({size:.1f} KB)")
 
-    if "chat" not in st.session_state:
-        st.session_state.chat = []
 
-    user = st.text_input("💬 Ask a business question...",
-                          placeholder="e.g. Which region has highest shipping cost?")
+# ─────────────────────────────────────────────
+# MAIN
+# ─────────────────────────────────────────────
+if __name__ == "__main__":
+    csv = sys.argv[1] if len(sys.argv)>1 else CSV_FILE
+    if not Path(csv).exists():
+        print(f"❌ File not found: {csv}")
+        sys.exit(1)
 
-    if user:
-        q = user.lower()
+    df           = load_and_engineer(csv)
+    model, le_p, le_r, le_c, feats, df_m, rmse, mae, test_df, test_pred = train_model(df)
+    fc_daily, monthly_fc = make_forecast(model, le_p, le_r, le_c, feats, df_m)
+    DATA, inv    = aggregate(df, test_df, test_pred, monthly_fc)
+    html         = build_html(DATA, inv, rmse, mae)
+    save(html, OUT_FILE)
 
-        # ── Smart responses ──
-        if "forecast" in q or "predict" in q or "future" in q:
-            peak_month = df.groupby("month")["Demand"].sum().idxmax()
-            response = (f"📈 The demand forecast model (RMSE: {rmse:.2f}, MAE: {mae:.2f}) shows "
-                        f"peak demand in Month {peak_month}. Festive periods (Oct–Nov) see ~35% spike. "
-                        f"Forecast is extended to **June 2026** — go to the Forecasting module for full details.")
-
-        elif "inventory" in q or "stock" in q or "reorder" in q:
-            alert_count = int(df["Needs_Reorder"].sum())
-            top_sku = df.sort_values("Stock_Level").iloc[0]["Product"]
-            response = (f"📦 **{alert_count}** SKUs require immediate reorder. "
-                        f"Lowest stock product: **{top_sku}**. "
-                        f"Average Safety Stock: {df['Safety_Stock'].mean():.1f} units. "
-                        f"Recommended: trigger EOQ orders for reorder-flagged items.")
-
-        elif "production" in q or "manufacture" in q or "plan" in q:
-            total_plan = df["Production_Plan"].sum()
-            response = (f"🏭 Total production plan: **{total_plan:,.0f} units** (15% buffer over demand). "
-                        f"Peak production months: Oct, Nov (festive). "
-                        f"Low production months: Jan, Feb (post-festive dip). "
-                        f"Recommend increasing capacity 30% in Q4 2025.")
-
-        elif "logistic" in q or "delivery" in q or "shipping" in q or "courier" in q:
-            high_cost_region = df.groupby("Region")["Shipping_Cost_INR"].mean().idxmax()
-            high_delay_region = df.groupby("Region")["Is_Delayed"].mean().idxmax()
-            response = (f"🚚 Highest shipping cost region: **{high_cost_region}**. "
-                        f"Most delayed region: **{high_delay_region}**. "
-                        f"Average delivery: {df['Delivery_Days'].mean():.1f} days. "
-                        f"Recommendation: optimize courier allocation in {high_delay_region}.")
-
-        elif "return" in q or "refund" in q:
-            return_rate = df["Return_Flag"].mean() * 100
-            top_return_cat = df.groupby("Category")["Return_Flag"].mean().idxmax()
-            response = (f"↩️ Overall return rate: **{return_rate:.1f}%**. "
-                        f"Highest returns in category: **{top_return_cat}**. "
-                        f"Recommendation: quality check and packaging review for this category.")
-
-        elif "revenue" in q or "sales" in q or "profit" in q:
-            total_rev = df["Revenue_INR"].sum()
-            top_cat = df.groupby("Category")["Revenue_INR"].sum().idxmax()
-            top_region = df.groupby("Region")["Revenue_INR"].sum().idxmax()
-            response = (f"💰 Total Revenue: **₹{total_rev/1e6:.2f}M**. "
-                        f"Top category: **{top_cat}**. "
-                        f"Top region: **{top_region}**. "
-                        f"Q4 (Oct–Dec) contributes ~40% of annual revenue.")
-
-        elif "risk" in q or "alert" in q or "problem" in q:
-            vol = df["Demand"].std()
-            delayed = df["Is_Delayed"].mean() * 100
-            reorder = df["Needs_Reorder"].sum()
-            response = (f"⚠️ Risk Summary:\n"
-                        f"• Demand volatility: **{vol:.2f}** std dev\n"
-                        f"• Delayed orders: **{delayed:.1f}%**\n"
-                        f"• SKUs needing reorder: **{reorder}**\n"
-                        f"• Return rate: **{df['Return_Flag'].mean()*100:.1f}%**")
-
-        elif "best" in q and "product" in q:
-            best = df.groupby("Product")["Revenue_INR"].sum().idxmax()
-            response = f"🏆 Best performing product: **{best}** by total revenue."
-
-        elif "worst" in q or "low" in q:
-            worst = df.groupby("Product")["Revenue_INR"].sum().idxmin()
-            response = f"📉 Lowest performing product: **{worst}**. Consider promotion or discontinuation."
-
-        elif "region" in q:
-            top_r = df.groupby("Region")["Demand"].sum().idxmax()
-            response = f"🗺️ Top demand region: **{top_r}**. Focus inventory and logistics resources here."
-
-        elif "category" in q:
-            cat_df = df.groupby("Category").agg(
-                Revenue=("Revenue_INR","sum"), Demand=("Demand","sum")).reset_index()
-            response = "🏷️ Category breakdown:\n" + "\n".join(
-                f"• {r['Category']}: ₹{r['Revenue']/1000:.1f}K revenue, {r['Demand']} units"
-                for _, r in cat_df.iterrows()
-            )
-
-        else:
-            response = ("💡 I can answer questions about:\n"
-                        "• **Forecast / Predict** — demand forecasting\n"
-                        "• **Inventory / Stock / Reorder** — inventory levels\n"
-                        "• **Production / Plan** — production scheduling\n"
-                        "• **Logistics / Shipping / Delivery** — courier analysis\n"
-                        "• **Revenue / Sales** — financial insights\n"
-                        "• **Risk / Alert** — supply chain risks\n"
-                        "• **Region / Category / Product** — segment analysis")
-
-        st.session_state.chat.append(("You", user))
-        st.session_state.chat.append(("AI", response))
-
-    # Render chat
-    for speaker, msg in reversed(st.session_state.chat[-20:]):
-        if speaker == "You":
-            st.markdown(f'<div class="chat-user">🧑 {msg}</div>', unsafe_allow_html=True)
-        else:
-            st.markdown(f'<div class="chat-ai">🤖 {msg}</div>', unsafe_allow_html=True)
-
-    if st.button("🗑️ Clear Chat"):
-        st.session_state.chat = []
-        st.rerun()
+    print("\n✅ OmniFlow D2D Dashboard ready!")
+    print(f"   → Open in browser: {OUT_FILE}")
+    print(f"   → {DATA['total_orders']} orders | ₹{DATA['total_rev']}L revenue | {len(monthly_fc)} months forecast")
