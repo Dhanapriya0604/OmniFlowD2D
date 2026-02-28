@@ -25,11 +25,23 @@ section[data-testid="stSidebar"] {background:#ffffff;}
 st.title("📦 OmniFlow-D2D — Supply Chain Intelligence")
 
 # -----------------------------
-# LOAD DATA
+# LOAD DATA (FIXED)
 # -----------------------------
 df = pd.read_csv("OmniFlow_D2D_India_Unified_1000.csv")
+
+# Rename columns to match your app
+df = df.rename(columns={
+    "Order_Date": "Date",
+    "Product_Name": "Product",
+    "Quantity": "Demand",
+    "Shipping_Cost_INR": "Logistics"
+})
+
+# Convert date
 df['Date'] = pd.to_datetime(df['Date'])
-df = df.sort_values('Date')
+
+# Sort
+df = df.sort_values("Date")
 
 # -----------------------------
 # FEATURE ENGINEERING
